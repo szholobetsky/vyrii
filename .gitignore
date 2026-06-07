@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Build / distribution
+dist/
+build/
+*.egg-info/
+old/
+
+# vyrii user data
+*.db
+*.sqlite
+*.sqlite3
+
+# personal configs (created at runtime, not for version control)
+mcp_servers.json
+parallel_profiles.json
+scheduler.json
+config.json
+
+# generated output
+exports/
+ctx/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+
+# Logs and debug
+*.log
+log_debug.txt
+
+# OS
+.DS_Store
+Thumbs.db
+
+# AI
+.claude/
