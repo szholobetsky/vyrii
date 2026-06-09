@@ -1,0 +1,22 @@
+/* Dark — GitHub Dark */
+:root {
+  --bg:           #0d1117;
+  --surface:      #161b22;
+  --sidebar-bg:   #0f172a;
+  --sidebar-bdr:  #1e293b;
+  --text:         #e6edf3;
+  --text-muted:   #8b949e;
+  --border:       #30363d;
+  --accent:       #818cf8;
+  --accent-dim:   color-mix(in srgb, #818cf8 15%, transparent);
+  --accent-hover: #6366f1;
+  --u-bubble:     #6366f1;
+  --u-text:       #ffffff;
+  --a-bubble:     #1c2128;
+  --a-text:       #e6edf3;
+  --input-bg:     #1c2128;
+  --input-bdr:    #30363d;
+  --code-bg:      #0d1117;
+  --scrollbar:    #30363d;
+  --shadow:       rgba(0,0,0,.4);
+}

@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vyrii — Minimal</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #ffffff;
+  --bg2:      #f6f8fa;
+  --text:     #1a1a2e;
+  --muted:    #6b7280;
+  --border:   #e5e7eb;
+  --accent:   #2563eb;
+  --u-label:  #2563eb;
+  --a-label:  #059669;
+  --u-bg:     #eff6ff;
+  --r:        6px;
+}
+[data-theme="dark"] {
+  --bg:       #0d1117;
+  --bg2:      #161b22;
+  --text:     #e6edf3;
+  --muted:    #8b949e;
+  --border:   #30363d;
+  --accent:   #58a6ff;
+  --u-label:  #58a6ff;
+  --a-label:  #3fb950;
+  --u-bg:     #1c2128;
+}
+[data-theme="ocean"] {
+  --bg:       #1B2B34;
+  --bg2:      #1e3040;
+  --text:     #CDD3DE;
+  --muted:    #65737E;
+  --border:   #2d4454;
+  --accent:   #5FB3B3;
+  --u-label:  #6699CC;
+  --a-label:  #5FB3B3;
+  --u-bg:     #243646;
+}
+[data-theme="soft"] {
+  --bg:       #faf7f2;
+  --bg2:      #f0ebe3;
+  --text:     #2d2416;
+  --muted:    #8b7355;
+  --border:   #ddd5c8;
+  --accent:   #b45309;
+  --u-label:  #b45309;
+  --a-label:  #047857;
+  --u-bg:     #fef3c7;
+}
+
+html, body { height: 100%; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; line-height: 1.65; background: var(--bg); color: var(--text); }
+
+.app { display: flex; flex-direction: column; height: 100vh; max-width: 800px; margin: 0 auto; }
+
+/* HEADER */
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 24px; border-bottom: 1px solid var(--border);
+  background: var(--bg); flex-shrink: 0;
+}
+.logo { font-weight: 700; font-size: 16px; letter-spacing: -0.5px; color: var(--text); }
+.controls { display: flex; gap: 6px; align-items: center; }
+.pill {
+  background: none; border: 1px solid var(--border);
+  color: var(--muted); border-radius: 20px;
+  padding: 3px 10px; font-size: 12px; cursor: pointer;
+  font-family: inherit; transition: border-color .15s, color .15s;
+}
+.pill:hover { border-color: var(--accent); color: var(--accent); }
+.pill.on { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.divider { width: 1px; height: 18px; background: var(--border); margin: 0 2px; }
+
+/* TABS */
+nav {
+  display: flex; padding: 0 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg); flex-shrink: 0; gap: 4px;
+}
+.tab {
+  padding: 10px 14px; font-size: 13px; color: var(--muted);
+  cursor: pointer; border-bottom: 2px solid transparent;
+  margin-bottom: -1px; transition: all .15s; user-select: none;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 500; }
+
+/* MESSAGES */
+.messages {
+  flex: 1; overflow-y: auto; padding: 0;
+  display: flex; flex-direction: column;
+}
+.message {
+  display: grid; grid-template-columns: 80px 1fr;
+  padding: 18px 24px; border-bottom: 1px solid var(--border);
+  gap: 16px; align-items: start;
+}
+.message:last-child { border-bottom: none; }
+.message.user { background: var(--u-bg); }
+.msg-role {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.6px;
+  text-transform: uppercase; padding-top: 2px; text-align: right;
+}
+.msg-role.user   { color: var(--u-label); }
+.msg-role.asst   { color: var(--a-label); }
+.msg-text { color: var(--text); }
+.msg-text p { margin-bottom: 8px; }
+.msg-text p:last-child { margin-bottom: 0; }
+.msg-text code {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 5px;
+  font-size: 12.5px; font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+}
+.msg-text pre {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 12px 16px; margin: 8px 0;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 12.5px; overflow-x: auto; line-height: 1.5;
+}
+.cursor {
+  display: inline-block; width: 2px; height: 14px;
+  background: var(--accent); animation: blink 1s infinite;
+  vertical-align: middle; margin-left: 2px; border-radius: 1px;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+/* INPUT */
+.input-area {
+  padding: 14px 24px; border-top: 1px solid var(--border);
+  background: var(--bg); flex-shrink: 0;
+}
+.input-row { display: flex; gap: 8px; align-items: flex-end; }
+select {
+  background: var(--bg2); border: 1px solid var(--border);
+  color: var(--text); border-radius: var(--r);
+  padding: 8px 10px; font-size: 12px; font-family: inherit;
+  cursor: pointer; flex-shrink: 0; outline: none;
+}
+textarea {
+  flex: 1; background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--r); color: var(--text); font-family: inherit;
+  font-size: 14px; padding: 8px 12px; resize: none; outline: none;
+  line-height: 1.5; min-height: 38px; max-height: 140px;
+  transition: border-color .15s;
+}
+textarea::placeholder { color: var(--muted); }
+textarea:focus { border-color: var(--accent); }
+.send {
+  background: var(--accent); color: #fff; border: none;
+  border-radius: var(--r); padding: 8px 18px; cursor: pointer;
+  font-size: 13px; font-family: inherit; height: 38px; flex-shrink: 0;
+  font-weight: 500; transition: opacity .15s;
+}
+.send:hover { opacity: 0.88; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <span class="logo">vyrii</span>
+    <div class="controls">
+      <button class="pill on"  onclick="theme('light',this)">Light</button>
+      <button class="pill"     onclick="theme('dark',this)">Dark</button>
+      <button class="pill"     onclick="theme('ocean',this)">Ocean</button>
+      <button class="pill"     onclick="theme('soft',this)">Soft</button>
+      <div class="divider"></div>
+      <button class="pill" id="lang" onclick="toggleLang()">EN</button>
+    </div>
+  </header>
+
+  <nav>
+    <div class="tab active">Chat</div>
+    <div class="tab">Translate</div>
+    <div class="tab">WebAsk</div>
+    <div class="tab">Files</div>
+    <div class="tab">Scan</div>
+  </nav>
+
+  <div class="messages">
+    <div class="message">
+      <div class="msg-role asst">Assistant</div>
+      <div class="msg-text">
+        <p>Hello! I'm running on <code>qwen3:1.7b</code> locally via Ollama. How can I help you today?</p>
+      </div>
+    </div>
+    <div class="message user">
+      <div class="msg-role user">You</div>
+      <div class="msg-text">
+        <p>Can you show me a simple Python function that reads a file and counts words?</p>
+      </div>
+    </div>
+    <div class="message">
+      <div class="msg-role asst">Assistant</div>
+      <div class="msg-text">
+        <p>Sure! Here's a clean version:</p>
+        <pre>def count_words(filepath: str) -> int:
+    with open(filepath, encoding="utf-8") as f:
+        return len(f.read().split())</pre>
+        <p>Usage: <code>count_words("notes.txt")</code>. If you need per-line counts or handle large files, I can show a streaming version too.<span class="cursor"></span></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="input-area">
+    <div class="input-row">
+      <select>
+        <option>qwen3:1.7b</option>
+        <option>gemma3:1b</option>
+        <option>llama3.2:3b</option>
+        <option>mistral:7b</option>
+      </select>
+      <textarea rows="1" placeholder="Message…"></textarea>
+      <button class="send">Send</button>
+    </div>
+  </div>
+
+</div>
+<script>
+function theme(t, btn) {
+  document.documentElement.setAttribute('data-theme', t);
+  document.querySelectorAll('.pill').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+}
+function toggleLang() {
+  const b = document.getElementById('lang');
+  b.textContent = b.textContent === 'EN' ? 'UK' : 'EN';
+}
+</script>
+</body>
+</html>

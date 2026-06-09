@@ -179,3 +179,7 @@ def run(chat, args: str):
         print(f"[webindex] then use: /flow deepagent_md <task> --rag {project} --rag-store {path}")
     except Exception as e:
         print(f"[webindex] index failed: {e}")
+
+    summary = f"Indexed {saved} pages from {url} into project '{project}' at {out_dir}"
+    chat.last_reply   = summary
+    chat._last_output = summary

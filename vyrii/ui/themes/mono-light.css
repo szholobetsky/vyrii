@@ -1,0 +1,23 @@
+/* Monochrome Light — pure black & white */
+:root {
+  --bg:           #ffffff;
+  --surface:      #f4f4f4;
+  --sidebar-bg:   #e8e8e8;
+  --sidebar-bdr:  #cccccc;
+  --text:         #111111;
+  --text-muted:   #666666;
+  --border:       #cccccc;
+  --accent:       #222222;
+  --accent-dim:   color-mix(in srgb, #222222 12%, transparent);
+  --accent-hover: #000000;
+  --u-bubble:     #222222;
+  --u-text:       #ffffff;
+  --a-bubble:     #eeeeee;
+  --a-text:       #111111;
+  --input-bg:     #f4f4f4;
+  --input-bdr:    #bbbbbb;
+  --code-bg:      #e8e8e8;
+  --scrollbar:    #bbbbbb;
+  --shadow:       rgba(0,0,0,.1);
+  --icon-filter:  grayscale(1);
+}

@@ -21,7 +21,9 @@ vyrii continues the same philosophy as **1bcoder**: give users with modest hardw
 ## Features
 
 ### Chat
-Streaming conversation with a local LLM. Supports multiple saved sessions, context compaction, file loading, and export. A spinner shows when the model is generating — no silent waits.
+Streaming conversation with a local LLM. Supports multiple saved sessions, context compaction, file loading, and export. A spinner shows when the model is generating — no silent waits. A **Stop** button interrupts generation at any time; whatever was already generated is kept in the conversation.
+
+Chat history is saved automatically to `~/.vyrii/history.db` and exported as markdown to `~/.vyrii/ctx/`. This applies to both the Gradio UI and the lightweight HTML UI.
 
 ### Translate
 On-the-fly translation in four modes:
@@ -110,10 +112,17 @@ vyrii
 
 Open `http://localhost:4896` — the Chat tab is ready. Pick `qwen3:1.7b` in the model selector and start talking.
 
-To use a custom UI port:
+Custom port:
 
 ```bash
 vyrii --ui 8001
+```
+
+No Gradio (HTML UI only, e.g. on Termux or a headless server):
+
+```bash
+vyrii --api 8000
+# open http://localhost:8000/ui/
 ```
 
 For Ukrainian UI:
@@ -130,6 +139,42 @@ vyrii --theme GithubDark
 
 ---
 
+## Two UI modes
+
+vyrii offers two independent interfaces — use one or both at the same time:
+
+### Gradio UI (`--ui`)
+
+The full-featured Gradio interface. Good for desktop use and interactive workflows.
+
+```bash
+vyrii               # Gradio UI on http://localhost:4896
+vyrii --ui 8001     # custom port
+```
+
+> **Note:** Gradio has a heavy Python dependency stack. On constrained environments — Android Termux, low-RAM systems, single-board computers — Gradio may fail to start or render poorly. Use the HTML UI in those cases.
+
+### Lightweight HTML UI (`--api` + `/ui/`)
+
+A self-contained single-page app served at `/ui/` by the FastAPI server. No Gradio required — runs in any browser including mobile Chrome. Ideal for headless servers, Termux, and LAN access from a phone.
+
+```bash
+vyrii --api 8000
+# open http://<your-ip>:8000/ui/
+```
+
+All tabs (Chat, Translate, RAG, WebAsk, WebCrawl, Team, etc.) are available in the HTML UI.
+
+### Both at the same time
+
+```bash
+vyrii --ui 8001 --api 8000
+# Gradio: http://localhost:8001
+# HTML UI: http://localhost:8000/ui/
+```
+
+---
+
 ## Requirements
 
 | Dependency | Version |
@@ -140,11 +185,39 @@ vyrii --theme GithubDark
 | [Ollama](https://ollama.com) | any recent version |
 
 Optional:
-- `fastapi` + `uvicorn` — for the REST API server (`pip install vyrii[api]`)
-- `lxml_html_clean` — for cleaner HTML extraction in web tools (`pip install vyrii[html]`)
+- `lxml` — for web crawl and HTML extraction (`pip install 'vyrii[web]'`)
+- `lxml_html_clean` — for cleaner HTML extraction (`pip install 'vyrii[html]'`)
+- `fastapi` + `uvicorn` — for the REST API server (`pip install 'vyrii[api]'`)
 - `simargl` — for RAG and WebIndex (`pip install simargl`)
 - `argostranslate` — for offline translation mini mode
 - `ctranslate2` + `sentencepiece` — for NLLB-200 offline translation
+
+### Termux (Android)
+
+```bash
+pkg update
+pkg install python
+
+# core install — chat, translate, file manager, RAG (no web crawl)
+pip install vyrii
+
+# optional: add web crawl support
+pkg install python-lxml
+```
+
+Chat, translate, web search, and file management work without lxml. Web crawl requires lxml — install it via `pkg install python-lxml` (pre-compiled for ARM, avoids source build).
+
+**Gradio is hard to run on Termux.** Use the lightweight HTML UI instead:
+
+```bash
+# in Termux:
+OLLAMA_HOST=0.0.0.0:11434 ollama serve &
+vyrii --api 8000 --bind 0.0.0.0
+
+# open in any browser:
+# http://127.0.0.1:8000/ui/          ← same device
+# http://192.168.x.x:8000/ui/        ← from any device on the same LAN
+```
 
 ---
 
@@ -154,25 +227,52 @@ Optional:
 vyrii
 ```
 
-Or with options:
+Common options:
 
 ```bash
-vyrii --host http://localhost:11434   # Ollama (default)
-vyrii --host openai://localhost:1234  # LMStudio
-vyrii --port 8080
-vyrii --lang uk                       # Ukrainian UI
+vyrii --host http://localhost:11434    # Ollama (default)
+vyrii --host openai://localhost:1234   # LMStudio or any OpenAI-compatible server
+vyrii --lang uk                        # Ukrainian UI
 vyrii --theme GithubDark
+vyrii --model qwen3:1.7b               # default model on startup
 ```
 
-The web UI opens at `http://localhost:4896` by default.
+### Network binding
 
-### With API server
+By default vyrii listens on `0.0.0.0` (all interfaces). To restrict to localhost only:
 
 ```bash
-vyrii --api
+vyrii --bind 127.0.0.1 --ui 4896
+vyrii --bind 127.0.0.1 --api 8000
 ```
 
-Starts both the Gradio UI and a FastAPI server on port 8002:
+To expose on the LAN (e.g., access from a phone):
+
+```bash
+vyrii --bind 0.0.0.0 --api 8000
+```
+
+### Authentication (`--auth`)
+
+Authentication is **opt-in**. By default vyrii runs without any login — suitable for home use or LAN cable connections where access control is handled at the network level.
+
+Add `--auth` to enable HTTP Basic Auth on all API endpoints:
+
+```bash
+# home / LAN cable — no login needed
+vyrii --api 8000
+
+# office / phone over Wi-Fi — protect with a password
+vyrii --api 8000 --ui 8001 --auth
+```
+
+Default credentials are `admin` / `admin`. Change them via the **Settings → Authentication** section in either the Gradio UI or the HTML UI — no display or terminal access required. Credentials are stored in `~/.vyrii/config.json`.
+
+Static UI files at `/ui/` are always served without auth so the login page loads even before credentials are entered.
+
+### API endpoints
+
+When running with `--api`, the following endpoints are available:
 
 - `GET  /v1/models` — list available models
 - `POST /v1/chat/completions` — OpenAI-compatible chat (streaming + non-streaming)
@@ -186,6 +286,8 @@ Starts both the Gradio UI and a FastAPI server on port 8002:
 - `POST /vyrii/files/upload`
 - `DELETE /vyrii/files`
 - `POST /vyrii/files/index`
+
+Interactive API docs: `http://localhost:<port>/docs`
 
 ---
 

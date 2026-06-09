@@ -17,7 +17,7 @@ import re
 import time
 import uuid
 
-from fastapi import FastAPI
+from fastapi import FastAPI, File as _File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -53,24 +53,122 @@ class WebAskRequest(BaseModel):
     model: str = ""
 
 class WebCrawlRequest(BaseModel):
-    url: str
-    task: str = ""
-    max_pages: int = 5
-    model: str = ""
+    url:        str
+    mode:       str  = "combine"   # combine | pages | extract | mirror | llm
+    filter:     str  = "none"      # none | url-prefix | llm
+    depth:      int  = 2
+    max_pages:  int  = 20
+    task:       str  = ""
+    format_out: str  = "log"       # log | structured  (llm mode)
+    ask:        bool = False
+    columns:    str  = ""          # YAML for extract/llm mode
+    model:      str  = ""
 
 class DeepAgentRequest(BaseModel):
-    task: str
-    ref_url: str = ""
-    sections: int = 3
-    model: str = ""
+    task:        str
+    ref_url:     str  = ""
+    sections:    int  = 3
+    model:       str  = ""
+    use_web:     bool = False
+    web_n:       int  = 3
+    rag_project: str  = ""
 
 class WebAnalysRequest(BaseModel):
     query: str
     n: int = 5
     model: str = ""
 
+class ScanRequest(BaseModel):
+    path: str
+    query: str = ""
+    chunk: int = 4000
+    summary: int = 400
+    target: int = 8000
+    rounds: int = 1
+    ext: str = ""
+    model: str = ""
 
-def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA) -> FastAPI:
+class WebIndexRequest(BaseModel):
+    url: str
+    project: str = ""
+    path: str = ""
+    depth: int = 2
+    pages: int = 20
+    model: str = ""
+
+class TeamProfileRequest(BaseModel):
+    name:    str
+    comment: str        = ""
+    workers: list[dict] = []   # [{host, model, provider}]
+
+class TeamRunRequest(BaseModel):
+    profile_name: str
+    query:        str
+    aspects:      list[str] = []
+    ctx_mode:     str       = "none"    # none | last | full
+    combine:      str       = "join"    # join | compact
+    messages:     list[dict] = []       # chat history for last/full mode
+    model:        str       = ""
+    num_ctx:      int       = 4096
+    timeout:      int       = 180
+
+class ObfuscateRequest(BaseModel):
+    text: str
+    glossary: str
+    force: bool = False
+    model: str = ""
+
+class DeobfuscateRequest(BaseModel):
+    text: str
+    glossary: str
+    force: bool = False
+    model: str = ""
+
+class SystemConfirmRequest(BaseModel):
+    confirmed: bool = False
+
+class FileMkdirRequest(BaseModel):
+    path: str
+
+class FileDeleteRequest(BaseModel):
+    path: str
+
+class FileIndexRequest(BaseModel):
+    path: str
+
+class SettingsRequest(BaseModel):
+    saved_url:       str | None = None
+    saved_model:     str | None = None
+    saved_backend:   str | None = None
+    lang:            str | None = None
+    theme:           str | None = None
+    timeout:         int | None = None
+    worker_timeout:  int | None = None
+
+class AuthChangeRequest(BaseModel):
+    username: str
+    password: str
+
+class HistCreateRequest(BaseModel):
+    title: str
+
+class HistAddMessageRequest(BaseModel):
+    role:    str
+    content: str
+
+class RagSearchRequest(BaseModel):
+    project: str
+    query:   str
+    top_k:   int = 3
+
+class RagAskRequest(BaseModel):
+    query:   str
+    context: str
+    model:   str = ""
+
+
+def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
+               auth: bool = False) -> FastAPI:
     app = FastAPI(title="vyrii API", version="1.0.0")
 
     app.add_middleware(
@@ -79,6 +177,38 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA) ->
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    if auth:
+        import base64 as _b64, pathlib as _pl_auth, json as _json_auth
+
+        def _read_auth_cfg() -> tuple[str, str]:
+            try:
+                cfg = _json_auth.loads((_pl_auth.Path.home() / ".vyrii" / "config.json").read_text(encoding="utf-8"))
+            except Exception:
+                cfg = {}
+            return cfg.get("auth_user", "admin"), cfg.get("auth_pass", "admin")
+
+        from fastapi import Request as _Request
+        from fastapi.responses import Response as _AuthResponse
+
+        @app.middleware("http")
+        async def _basic_auth(request: _Request, call_next):
+            # Static UI files are public — credentials are handled in-app via JS
+            if request.method == "OPTIONS" or request.url.path.startswith("/ui"):
+                return await call_next(request)
+            exp_user, exp_pass = _read_auth_cfg()
+            auth_hdr = request.headers.get("Authorization", "")
+            if auth_hdr.startswith("Basic "):
+                try:
+                    user, _, pwd = _b64.b64decode(auth_hdr[6:]).decode("utf-8", errors="replace").partition(":")
+                    if user == exp_user and pwd == exp_pass:
+                        return await call_next(request)
+                except Exception:
+                    pass
+            return _AuthResponse(
+                status_code=401,
+                headers={"WWW-Authenticate": 'Basic realm="vyrii"'},
+            )
 
     def _default_model() -> str:
         models = list_models(base_url, backend)
@@ -268,12 +398,44 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA) ->
 
     @app.post("/vyrii/webcrawl")
     def webcrawl(req: WebCrawlRequest):
+        import tempfile as _tmp, os as _os2
         from .adapter import ChatAdapter
         from .flows import webcrawl as _wcf
-        model = req.model or _default_model()
+        model   = req.model or _default_model()
         adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
-        task_str = req.task.strip() or "Summarize the main content."
-        _wcf.run(adapter, f'{req.url} --mode llm --task "{task_str}" -N {req.max_pages}')
+
+        args = f'{req.url} --mode {req.mode} --depth {req.depth} -N {req.max_pages}'
+
+        if req.filter != "none":
+            args += f' --filter {req.filter}'
+
+        if req.task.strip():
+            args += f' --task "{req.task.strip()}"'
+
+        if req.mode == "llm":
+            args += f' --format {req.format_out}'
+
+        if req.ask:
+            args += ' --ask'
+
+        # write columns YAML to a temp file if provided
+        _cols_tmp = None
+        if req.columns.strip() and req.mode in ("extract", "llm"):
+            _cols_tmp = _tmp.NamedTemporaryFile(
+                mode="w", suffix=".yaml", delete=False, encoding="utf-8"
+            )
+            _cols_tmp.write(req.columns.strip())
+            _cols_tmp.close()
+            args += f' --columns {_cols_tmp.name}'
+
+        _wcf.run(adapter, args)
+
+        if _cols_tmp:
+            try:
+                _os2.unlink(_cols_tmp.name)
+            except Exception:
+                pass
+
         return {"result": adapter.last_reply or "No results."}
 
     # ── /vyrii/deepagent ──────────────────────────────────────────────────────
@@ -287,9 +449,15 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA) ->
         if not task:
             return {"error": "task is required"}
         adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
+        import pathlib as _plda
         args = f'"{task}" --maxdepth {req.sections}'
         if req.ref_url.strip():
             args += f' --ref {req.ref_url.strip()}'
+        if req.use_web:
+            args += f' --web {req.web_n}'
+        if req.rag_project.strip():
+            _vyrii_home = _plda.Path.home() / ".vyrii"
+            args += f' --rag {req.rag_project.strip()} --rag-store "{_vyrii_home}"'
         _df.run(adapter, args)
         return {"result": adapter.last_reply or "No output."}
 
@@ -306,6 +474,273 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA) ->
         adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
         _waf.run(adapter, f'"{query}" -n {req.n}')
         return {"result": adapter.last_reply or "No results."}
+
+    # ── /vyrii/scan ───────────────────────────────────────────────────────────
+
+    @app.post("/vyrii/scan")
+    def scan_compact(req: ScanRequest):
+        from .adapter import ChatAdapter
+        from .flows import scan as _sc
+        model = req.model or _default_model()
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
+        path = req.path.strip()
+        if not path:
+            return {"error": "path is required"}
+        args = f'"{path}"'
+        if req.query.strip():
+            args += f' --query "{req.query.strip()}"'
+        args += f' --chunk {req.chunk} --summary {req.summary} --target {req.target} --rounds {req.rounds}'
+        if req.ext.strip():
+            args += f' --ext {req.ext.strip()}'
+        _sc.run(adapter, args)
+        return {"result": adapter.last_reply or "Done."}
+
+    # ── /vyrii/webindex ───────────────────────────────────────────────────────
+
+    @app.post("/vyrii/webindex")
+    def webindex(req: WebIndexRequest):
+        from .adapter import ChatAdapter
+        from .flows import webindex as _wi
+        model = req.model or _default_model()
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
+        url = req.url.strip()
+        if not url or not url.startswith("http"):
+            return {"error": "valid url is required"}
+        args = f'"{url}"'
+        if req.project.strip():
+            args += f' --project {req.project.strip()}'
+        if req.path.strip():
+            args += f' --path "{req.path.strip()}"'
+        args += f' --depth {req.depth} --pages {req.pages}'
+        _wi.run(adapter, args)
+        return {"result": adapter.last_reply or "Done."}
+
+    # ── /vyrii/obfuscate ──────────────────────────────────────────────────────
+
+    import tempfile as _tmpf, os as _os3
+
+    def _glossary_tempfile(content: str) -> str:
+        """Write glossary YAML content to a temp file; return its path."""
+        tmp = _tmpf.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False, encoding="utf-8"
+        )
+        tmp.write(content)
+        tmp.close()
+        return tmp.name
+
+    @app.post("/vyrii/obfuscate")
+    def obfuscate(req: ObfuscateRequest):
+        from .adapter import ChatAdapter
+        from .flows import obfuscate as _of
+        if not req.glossary.strip():
+            return {"error": "glossary is required"}
+        model   = req.model or _default_model()
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
+        adapter._last_output = req.text
+        gpath   = _glossary_tempfile(req.glossary)
+        args    = f'--glossary {gpath}'
+        if req.force:
+            args += ' --force'
+        try:
+            _of.run(adapter, args)
+        finally:
+            try: _os3.unlink(gpath)
+            except Exception: pass
+        return {"result": adapter.last_reply or ""}
+
+    # ── /vyrii/deobfuscate ────────────────────────────────────────────────────
+
+    @app.post("/vyrii/deobfuscate")
+    def deobfuscate(req: DeobfuscateRequest):
+        from .adapter import ChatAdapter
+        from .flows import deobfuscate as _dof
+        if not req.glossary.strip():
+            return {"error": "glossary is required"}
+        model   = req.model or _default_model()
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
+        adapter._last_output = req.text
+        gpath   = _glossary_tempfile(req.glossary)
+        args    = f'--glossary {gpath}'
+        if req.force:
+            args += ' --force'
+        try:
+            _dof.run(adapter, args)
+        finally:
+            try: _os3.unlink(gpath)
+            except Exception: pass
+        return {"result": adapter.last_reply or ""}
+
+    # ── /vyrii/themes ────────────────────────────────────────────────────────
+
+    @app.get("/vyrii/themes")
+    def list_themes():
+        import pathlib as _pth
+        themes_dir = _pth.Path(__file__).parent / "ui" / "themes"
+        if not themes_dir.exists():
+            return {"themes": ["ocean"]}
+        themes = sorted(f.stem for f in themes_dir.glob("*.css") if f.is_file())
+        return {"themes": themes or ["ocean"]}
+
+    # ── /vyrii/settings ──────────────────────────────────────────────────────
+
+    import pathlib as _pl, json as _json
+    _CFG = _pl.Path.home() / ".vyrii" / "config.json"
+
+    def _read_cfg() -> dict:
+        try:
+            return _json.loads(_CFG.read_text(encoding="utf-8")) if _CFG.exists() else {}
+        except Exception:
+            return {}
+
+    def _write_cfg(updates: dict):
+        cfg = _read_cfg()
+        cfg.update({k: v for k, v in updates.items() if v is not None})
+        _CFG.parent.mkdir(parents=True, exist_ok=True)
+        _CFG.write_text(_json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    @app.get("/vyrii/settings")
+    def settings_get():
+        return _read_cfg()
+
+    @app.post("/vyrii/settings")
+    def settings_save(req: SettingsRequest):
+        try:
+            _write_cfg(req.model_dump(exclude_none=True))
+            return {"ok": True, "config": _read_cfg()}
+        except Exception as e:
+            return {"error": str(e)}
+
+    @app.post("/vyrii/auth/password")
+    def auth_change_password(req: AuthChangeRequest):
+        if not req.username.strip() or not req.password:
+            return {"error": "username and password are required"}
+        _write_cfg({"auth_user": req.username.strip(), "auth_pass": req.password})
+        return {"ok": True}
+
+    # ── /vyrii/history/* ─────────────────────────────────────────────────────
+
+    @app.get("/vyrii/history/chats")
+    def hist_list_chats():
+        from . import history as _h
+        return [{"id": id_, "title": title, "created_at": ts}
+                for id_, title, ts in _h.list_chats()]
+
+    @app.post("/vyrii/history/chats")
+    def hist_create_chat(req: HistCreateRequest):
+        from . import history as _h
+        cid = _h.create_chat(req.title.strip() or "New chat")
+        return {"id": cid}
+
+    @app.post("/vyrii/history/chats/{chat_id}/messages")
+    def hist_add_message(chat_id: int, req: HistAddMessageRequest):
+        from . import history as _h
+        _h.add_message(chat_id, req.role, req.content)
+        return {"ok": True}
+
+    @app.get("/vyrii/history/chats/{chat_id}")
+    def hist_get_chat(chat_id: int):
+        from . import history as _h
+        import sqlite3 as _sq
+        with _h._conn() as c:
+            row = c.execute(
+                "SELECT title, created_at FROM chats WHERE id=?", (chat_id,)
+            ).fetchone()
+        if not row:
+            return {"error": "not found"}
+        return {"id": chat_id, "title": row[0], "created_at": row[1],
+                "messages": _h.get_messages(chat_id)}
+
+    @app.get("/vyrii/history/search")
+    def hist_search(q: str = ""):
+        from . import history as _h
+        return [{"id": i, "title": t, "created_at": ts}
+                for i, t, ts in _h.search_chats(q)]
+
+    @app.delete("/vyrii/history/chats/{chat_id}")
+    def hist_delete_chat(chat_id: int):
+        from . import history as _h
+        _h.delete_chat(chat_id)
+        return {"ok": True}
+
+    # ── /vyrii/rag/* ─────────────────────────────────────────────────────────
+
+    _VYRII_HOME = _pl.Path.home() / ".vyrii"
+
+    @app.get("/vyrii/rag/projects")
+    def rag_projects():
+        projects: set[str] = set()
+        for store in [_VYRII_HOME / ".simargl", _VYRII_HOME / ".simargl_web"]:
+            if store.exists():
+                for d in store.iterdir():
+                    if d.is_dir():
+                        projects.add(d.name)
+        return {"projects": sorted(projects)}
+
+    @app.post("/vyrii/rag/search")
+    def rag_search(req: RagSearchRequest):
+        query   = req.query.strip()
+        project = req.project.strip()
+        if not query or not project:
+            return {"error": "project and query are required"}
+        try:
+            from simargl.searcher import search as _sim_search
+            result = _sim_search(
+                query, mode="file", top_n=req.top_k,
+                project_id=project,
+                store_dir=str(_VYRII_HOME / ".simargl"),
+            )
+        except ImportError:
+            return {"error": "simargl not installed — run: pip install simargl"}
+        except Exception as e:
+            return {"error": str(e)}
+
+        files = result.get("files", [])[:req.top_k]
+        if not files:
+            return {"results": [], "context": "", "sources": []}
+
+        results, sources, ctx_parts = [], [], []
+        for i, f in enumerate(files, 1):
+            path    = _pl.Path(f.get("path", ""))
+            fname   = path.name
+            score   = f.get("score", 0)
+            text    = ""
+            for cand in [
+                _VYRII_HOME / ".simargl_web" / project / fname,  # webindex source
+                _VYRII_HOME / path,                               # files_index (relative path)
+                _pl.Path(path),                                   # absolute path
+                _VYRII_HOME / fname,                              # filename only fallback
+            ]:
+                try:
+                    if cand.is_file():
+                        text = cand.read_text(encoding="utf-8", errors="replace")[:3000]
+                        break
+                except Exception:
+                    continue
+            snippet = text[:300].replace("\n", " ")
+            results.append({"rank": i, "file": fname, "score": round(score, 3),
+                            "snippet": snippet, "text": text[:1500]})
+            sources.append(fname)
+            ctx_parts.append(f"[Source {i}: {fname}  score:{score:.2f}]\n{text}")
+
+        return {"results": results, "context": "\n\n".join(ctx_parts), "sources": sources}
+
+    @app.post("/vyrii/rag/ask")
+    def rag_ask(req: RagAskRequest):
+        model = req.model or _default_model()
+        if not req.context.strip():
+            return {"error": "context is required"}
+        prompt = (
+            f"Use the following sources to answer the question. "
+            f"Be concise and cite sources by filename when relevant.\n\n"
+            f"{req.context}\n\n---\n\nQuestion: {req.query}\n\nAnswer:"
+        )
+        try:
+            answer = complete([{"role": "user", "content": prompt}],
+                              model, base_url, backend=backend,
+                              num_ctx=8192, timeout=300)
+            return {"result": answer}
+        except Exception as e:
+            return {"error": str(e)}
 
     # ── /vyrii/files/* ────────────────────────────────────────────────────────
 
@@ -329,14 +764,32 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA) ->
             result[key] = _flist(item, depth + 1, max_depth) if item.is_dir() else None
         return result
 
-    class FileMkdirRequest(BaseModel):
-        path: str
+    # FileMkdirRequest / FileDeleteRequest / FileIndexRequest — defined at module level
 
-    class FileDeleteRequest(BaseModel):
-        path: str
-
-    class FileIndexRequest(BaseModel):
-        path: str
+    @app.get("/vyrii/files/read")
+    def files_read(path: str = ""):
+        if not path.strip():
+            return {"error": "path is required"}
+        try:
+            p = _fsafe(path)
+            if not p.is_file():
+                return {"error": f"Not a file: {path}"}
+            size = p.stat().st_size
+            MAX  = 65536
+            try:
+                content = p.read_text(encoding="utf-8", errors="replace")
+            except Exception as e:
+                return {"error": f"Cannot read: {e}"}
+            truncated = len(content) > MAX
+            return {
+                "name":      p.name,
+                "path":      path,
+                "size":      size,
+                "content":   content[:MAX],
+                "truncated": truncated,
+            }
+        except Exception as e:
+            return {"error": str(e)}
 
     @app.get("/vyrii/files/list")
     def files_list(path: str = ""):
@@ -354,9 +807,23 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA) ->
             return {"error": str(e)}
 
     @app.post("/vyrii/files/upload")
-    async def files_upload(dest: str = "", files=None):
-        from fastapi import UploadFile, File
-        return {"error": "Use multipart/form-data with files field"}
+    async def files_upload(dest: str = "",
+                           files: list[UploadFile] = _File(default=[])):
+        saved: list[str] = []
+        errors: list[dict] = []
+        for uf in files:
+            try:
+                rel = (dest.rstrip("/\\") + "/" + uf.filename) if dest.strip() else uf.filename
+                target = _fsafe(rel)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                content = await uf.read()
+                target.write_bytes(content)
+                saved.append(str(target.relative_to(_FHOME)))
+            except Exception as e:
+                errors.append({"file": getattr(uf, "filename", "?"), "error": str(e)})
+        if errors and not saved:
+            return {"error": errors}
+        return {"ok": True, "saved": saved, **({"errors": errors} if errors else {})}
 
     @app.delete("/vyrii/files")
     def files_delete(req: FileDeleteRequest):
@@ -392,5 +859,143 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA) ->
             return {"error": result.stderr[:500]}
         except Exception as e:
             return {"error": str(e)}
+
+    # ── /vyrii/team/* ────────────────────────────────────────────────────────
+
+    from . import parallel as _par
+    _par.init(_VYRII_HOME)
+
+    @app.get("/vyrii/team/profiles")
+    def team_profiles():
+        return {"profiles": _par.load_profiles()}
+
+    @app.get("/vyrii/team/profile/{name}")
+    def team_profile_get(name: str):
+        p = _par.get_profile(name)
+        if p is None:
+            from fastapi import HTTPException
+            raise HTTPException(404, f"Profile '{name}' not found")
+        return p
+
+    @app.post("/vyrii/team/profile")
+    def team_profile_save(req: TeamProfileRequest):
+        _par.upsert_profile(req.model_dump())
+        return {"ok": True}
+
+    @app.delete("/vyrii/team/profile/{name}")
+    def team_profile_delete(name: str):
+        _par.delete_profile(name)
+        return {"ok": True}
+
+    @app.post("/vyrii/team/run")
+    def team_run(req: TeamRunRequest):
+        import queue as _q, threading as _t
+
+        profile = _par.get_profile(req.profile_name)
+        if profile is None:
+            def _e():
+                yield f'data: {json.dumps({"type": "error", "text": f"Profile not found: {req.profile_name}"})}\n\n'
+            return StreamingResponse(_e(), media_type="text/event-stream")
+
+        workers = profile.get("workers", [])
+        if not workers:
+            def _e():
+                yield f'data: {json.dumps({"type": "error", "text": "Profile has no workers"})}\n\n'
+            return StreamingResponse(_e(), media_type="text/event-stream")
+
+        model = req.model or _default_model()
+        q = _q.Queue()
+
+        def _run():
+            try:
+                results = _par.run_parallel(
+                    workers, req.aspects, req.query,
+                    req.messages, req.num_ctx, req.timeout,
+                    lambda msg: q.put({"type": "progress", "text": msg}),
+                )
+                if req.combine == "compact":
+                    final = _par.compact_results(
+                        req.query, results, model,
+                        base_url, backend, req.num_ctx, req.timeout,
+                    )
+                else:
+                    final = _par.join_results(req.query, results)
+                q.put({"type": "done", "text": final})
+            except Exception as e:
+                q.put({"type": "error", "text": str(e)})
+
+        _t.Thread(target=_run, daemon=True).start()
+
+        def _gen():
+            while True:
+                item = q.get()
+                yield f"data: {json.dumps(item)}\n\n"
+                if item["type"] in ("done", "error"):
+                    break
+
+        return StreamingResponse(_gen(), media_type="text/event-stream")
+
+    # ── /vyrii/system/* ───────────────────────────────────────────────────────
+
+    import platform as _platform, threading as _threading, os as _os4
+    import pathlib as _plsys
+
+    _ROOT = _plsys.Path(__file__).parent.parent   # C:\Project\vyrii\
+
+    @app.post("/vyrii/system/restart")
+    def system_restart():
+        def _do():
+            import time, subprocess as _sp
+            time.sleep(1.5)
+            devnull = open(_os4.devnull, "w")
+            if _platform.system() == "Windows":
+                script = str(_ROOT / "vyrii_auto_api.bat")
+                DETACHED  = 0x00000008
+                NEW_GROUP = 0x00000200
+                _sp.Popen(script, creationflags=DETACHED | NEW_GROUP,
+                          close_fds=True, stdin=_sp.DEVNULL,
+                          stdout=devnull, stderr=devnull, shell=True)
+            else:
+                script = str(_ROOT / "vyrii_auto_api.sh")
+                _sp.Popen(["bash", script], start_new_session=True,
+                          stdin=_sp.DEVNULL, stdout=devnull, stderr=devnull)
+            _os4._exit(0)
+        _threading.Thread(target=_do, daemon=False).start()
+        return {"ok": True, "message": "Restarting vyrii… reload the page in a few seconds."}
+
+    @app.post("/vyrii/system/reboot")
+    def system_reboot(req: SystemConfirmRequest):
+        if not req.confirmed:
+            return {"error": "Set confirmed=true to proceed."}
+        import subprocess as _sp
+        if _platform.system() == "Windows":
+            _sp.Popen(["shutdown", "/r", "/t", "10"])
+            return {"ok": True, "message": "Windows reboot in 10 s."}
+        _sp.Popen(["systemctl", "reboot"])
+        return {"ok": True, "message": "System reboot initiated."}
+
+    @app.post("/vyrii/system/shutdown")
+    def system_shutdown(req: SystemConfirmRequest):
+        if not req.confirmed:
+            return {"error": "Set confirmed=true to proceed."}
+        import subprocess as _sp
+        if _platform.system() == "Windows":
+            _sp.Popen(["shutdown", "/s", "/t", "10"])
+            return {"ok": True, "message": "Windows shutdown in 10 s."}
+        _sp.Popen(["systemctl", "poweroff"])
+        return {"ok": True, "message": "System shutdown initiated."}
+
+    # ── static UI (served last so API routes take priority) ───────────────
+    import os as _os
+    _ui_dir = _os.path.join(_os.path.dirname(__file__), "ui")
+    if _os.path.isdir(_ui_dir):
+        from fastapi.staticfiles import StaticFiles
+        from fastapi.responses import RedirectResponse
+
+        @app.get("/")
+        def _ui_root():
+            return RedirectResponse("/ui/")
+
+        app.mount("/ui", StaticFiles(directory=_ui_dir, html=True), name="ui")
 
     return app

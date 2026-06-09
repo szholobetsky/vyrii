@@ -1,0 +1,23 @@
+/* Monochrome Dark — pure black & white */
+:root {
+  --bg:           #0a0a0a;
+  --surface:      #1a1a1a;
+  --sidebar-bg:   #111111;
+  --sidebar-bdr:  #2a2a2a;
+  --text:         #eeeeee;
+  --text-muted:   #888888;
+  --border:       #333333;
+  --accent:       #cccccc;
+  --accent-dim:   color-mix(in srgb, #cccccc 12%, transparent);
+  --accent-hover: #ffffff;
+  --u-bubble:     #cccccc;
+  --u-text:       #0a0a0a;
+  --a-bubble:     #222222;
+  --a-text:       #eeeeee;
+  --input-bg:     #1a1a1a;
+  --input-bdr:    #444444;
+  --code-bg:      #111111;
+  --scrollbar:    #444444;
+  --shadow:       rgba(0,0,0,.5);
+  --icon-filter:  grayscale(1);
+}

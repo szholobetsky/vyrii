@@ -1,0 +1,22 @@
+/* Summer — warm Mediterranean sun */
+:root {
+  --bg:           #FFFCF0;
+  --surface:      #FFF8E1;
+  --sidebar-bg:   #FFF3CC;
+  --sidebar-bdr:  #FFE082;
+  --text:         #1A120B;
+  --text-muted:   #92400E;
+  --border:       #FFCC80;
+  --accent:       #F97316;
+  --accent-dim:   color-mix(in srgb, #F97316 15%, transparent);
+  --accent-hover: #EA580C;
+  --u-bubble:     #F97316;
+  --u-text:       #ffffff;
+  --a-bubble:     #FFF3CC;
+  --a-text:       #1A120B;
+  --input-bg:     #FFF8E1;
+  --input-bdr:    #FFCC80;
+  --code-bg:      #FFF3CC;
+  --scrollbar:    #FFE082;
+  --shadow:       rgba(249,115,22,.12);
+}

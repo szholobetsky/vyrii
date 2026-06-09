@@ -1,0 +1,22 @@
+/* Beach — turquoise sea, aquamarine shallows */
+:root {
+  --bg:           #F0FDFC;
+  --surface:      #CCFBF1;
+  --sidebar-bg:   #99F6E4;
+  --sidebar-bdr:  #5EEAD4;
+  --text:         #042F2E;
+  --text-muted:   #0F766E;
+  --border:       #99F6E4;
+  --accent:       #0D9488;
+  --accent-dim:   color-mix(in srgb, #0D9488 15%, transparent);
+  --accent-hover: #0F766E;
+  --u-bubble:     #14B8A6;
+  --u-text:       #042F2E;
+  --a-bubble:     #CCFBF1;
+  --a-text:       #042F2E;
+  --input-bg:     #E6FAF8;
+  --input-bdr:    #5EEAD4;
+  --code-bg:      #CCFBF1;
+  --scrollbar:    #5EEAD4;
+  --shadow:       rgba(13,148,136,.12);
+}

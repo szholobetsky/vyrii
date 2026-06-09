@@ -291,3 +291,5 @@ def run(chat, args: str):
         print(f"[scan] max rounds ({max_rounds}) reached — output may still exceed target")
 
     print(f"\n[scan] output: {final_path}")
+    chat.last_reply   = current_text
+    chat._last_output = current_text

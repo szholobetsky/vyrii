@@ -1,0 +1,22 @@
+/* Ocean — Oceanic Next palette */
+:root {
+  --bg:           #1B2B34;
+  --surface:      #1e3040;
+  --sidebar-bg:   #0f1e26;
+  --sidebar-bdr:  #1a2d38;
+  --text:         #CDD3DE;
+  --text-muted:   #65737E;
+  --border:       #2d4454;
+  --accent:       #5FB3B3;
+  --accent-dim:   color-mix(in srgb, #5FB3B3 15%, transparent);
+  --accent-hover: #4e9d9d;
+  --u-bubble:     #5FB3B3;
+  --u-text:       #0f1e26;
+  --a-bubble:     #243646;
+  --a-text:       #CDD3DE;
+  --input-bg:     #243646;
+  --input-bdr:    #2d4454;
+  --code-bg:      #0f1e26;
+  --scrollbar:    #2d4454;
+  --shadow:       rgba(0,0,0,.4);
+}

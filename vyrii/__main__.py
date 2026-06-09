@@ -58,6 +58,8 @@ def main() -> None:
                         help="REST API port (default: 5000)")
     parser.add_argument("--bind", default="0.0.0.0", metavar="ADDR",
                         help="Network interface to listen on (default: 0.0.0.0)")
+    parser.add_argument("--auth", action="store_true",
+                        help="Enable HTTP Basic Auth (credentials in ~/.vyrii/config.json, default admin/admin)")
     parser.add_argument("--host", default=None, metavar="HOST",
                         help="LLM server — host:port, ollama://host:port, or openai://host:port")
     parser.add_argument("--ollama", default="http://localhost:11434", metavar="URL",
@@ -104,7 +106,8 @@ def _run_ui_only(args, api_url, api_backend, lang, startup_model) -> None:
             ollama_url=api_url,
             openai_url=args.openai or "http://localhost:8080",
             lang=lang,
-            startup_model=startup_model)
+            startup_model=startup_model,
+            auth=args.auth)
 
 
 def _run_api_only(args, api_url, api_backend) -> None:
@@ -112,8 +115,9 @@ def _run_api_only(args, api_url, api_backend) -> None:
     from .api import create_app
     print(f"vyrii API -> http://localhost:{args.api}")
     print(f"  backend : {api_url}  ({api_backend})")
+    print(f"  auth    : {'on' if args.auth else 'off'}")
     print(f"  docs    : http://localhost:{args.api}/docs")
-    uvicorn.run(create_app(base_url=api_url, backend=api_backend),
+    uvicorn.run(create_app(base_url=api_url, backend=api_backend, auth=args.auth),
                 host=args.bind, port=args.api)
 
 
@@ -121,7 +125,7 @@ def _run_both(args, api_url, api_backend, lang, startup_model) -> None:
     import threading
     import uvicorn
     from .api import create_app
-    from .app import build_app
+    from .app import build_app, _vyrii_auth
 
     gradio_app = build_app(
         ollama_url=api_url,
@@ -134,6 +138,7 @@ def _run_both(args, api_url, api_backend, lang, startup_model) -> None:
         gradio_app.launch(
             server_name=args.bind, server_port=args.ui,
             prevent_thread_lock=True,
+            auth=_vyrii_auth if args.auth else None,
             theme=getattr(gradio_app, "_vyrii_theme", None),
         )
 
@@ -141,7 +146,8 @@ def _run_both(args, api_url, api_backend, lang, startup_model) -> None:
     t.start()
     print(f"vyrii UI  -> http://localhost:{args.ui}")
     print(f"vyrii API -> http://localhost:{args.api}  (docs: /docs)")
-    uvicorn.run(create_app(base_url=api_url, backend=api_backend),
+    print(f"  auth    : {'on' if args.auth else 'off'}")
+    uvicorn.run(create_app(base_url=api_url, backend=api_backend, auth=args.auth),
                 host=args.bind, port=args.api)
 
 

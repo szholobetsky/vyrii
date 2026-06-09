@@ -1,0 +1,22 @@
+/* Soft — warm cream */
+:root {
+  --bg:           #faf7f2;
+  --surface:      #f0ebe3;
+  --sidebar-bg:   #ede8e0;
+  --sidebar-bdr:  #ddd5c8;
+  --text:         #2d2416;
+  --text-muted:   #8b7355;
+  --border:       #ddd5c8;
+  --accent:       #7c3aed;
+  --accent-dim:   color-mix(in srgb, #7c3aed 12%, transparent);
+  --accent-hover: #6d28d9;
+  --u-bubble:     #7c3aed;
+  --u-text:       #ffffff;
+  --a-bubble:     #e9e4db;
+  --a-text:       #2d2416;
+  --input-bg:     #f0ebe3;
+  --input-bdr:    #ddd5c8;
+  --code-bg:      #e4ddd4;
+  --scrollbar:    #c9bfaf;
+  --shadow:       rgba(0,0,0,.06);
+}

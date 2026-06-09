@@ -1,0 +1,22 @@
+/* Light */
+:root {
+  --bg:           #ffffff;
+  --surface:      #f6f8fa;
+  --sidebar-bg:   #f3f4f6;
+  --sidebar-bdr:  #e5e7eb;
+  --text:         #111827;
+  --text-muted:   #6b7280;
+  --border:       #e5e7eb;
+  --accent:       #6366f1;
+  --accent-dim:   color-mix(in srgb, #6366f1 15%, transparent);
+  --accent-hover: #4f46e5;
+  --u-bubble:     #6366f1;
+  --u-text:       #ffffff;
+  --a-bubble:     #f3f4f6;
+  --a-text:       #111827;
+  --input-bg:     #f6f8fa;
+  --input-bdr:    #d1d5db;
+  --code-bg:      #f1f5f9;
+  --scrollbar:    #d1d5db;
+  --shadow:       rgba(0,0,0,.08);
+}

@@ -253,7 +253,7 @@ def _crawl(start_url: str, max_depth: int, url_filter: str | None = None, max_pa
     try:
         from lxml import etree as _et
     except ImportError:
-        raise ImportError("lxml not installed — run: pip install lxml")
+        raise ImportError("lxml not installed — run: pip install 'vyrii[web]'  (Termux: pkg install python-lxml)")
 
     prefix = _normalize_filter(url_filter) if url_filter else None
     domain = _urlparse(start_url).netloc
@@ -532,7 +532,8 @@ def run(chat, args: str):
     try:
         from lxml import etree  # noqa: F401
     except ImportError:
-        print("[webcrawl] lxml not installed — run: pip install lxml")
+        print("[webcrawl] lxml not installed — run: pip install 'vyrii[web]'\n"
+              "           On Termux: pkg install python-lxml")
         return
 
     def _mk_llm_filter_fn():

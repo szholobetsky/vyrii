@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vyrii — Sidebar</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #ffffff;
+  --bg2:       #f6f8fa;
+  --sidebar:   #f3f4f6;
+  --text:      #111827;
+  --muted:     #6b7280;
+  --border:    #e5e7eb;
+  --accent:    #6366f1;
+  --accent2:   #818cf8;
+  --nav-act:   #6366f1;
+  --nav-txt:   #6b7280;
+  --u-bubble:  #6366f1;
+  --u-text:    #ffffff;
+  --a-bubble:  #f3f4f6;
+  --a-text:    #111827;
+  --inp-bg:    #f3f4f6;
+  --r:         10px;
+}
+[data-theme="dark"] {
+  --bg:        #111827;
+  --bg2:       #1f2937;
+  --sidebar:   #0f172a;
+  --text:      #f1f5f9;
+  --muted:     #94a3b8;
+  --border:    #1e293b;
+  --accent:    #818cf8;
+  --accent2:   #a5b4fc;
+  --nav-act:   #818cf8;
+  --nav-txt:   #64748b;
+  --u-bubble:  #6366f1;
+  --u-text:    #ffffff;
+  --a-bubble:  #1e293b;
+  --a-text:    #f1f5f9;
+  --inp-bg:    #1e293b;
+}
+[data-theme="ocean"] {
+  --bg:        #1B2B34;
+  --bg2:       #243646;
+  --sidebar:   #0f1e26;
+  --text:      #CDD3DE;
+  --muted:     #65737E;
+  --border:    #2d4454;
+  --accent:    #5FB3B3;
+  --accent2:   #80CBC4;
+  --nav-act:   #5FB3B3;
+  --nav-txt:   #65737E;
+  --u-bubble:  #5FB3B3;
+  --u-text:    #0f1e26;
+  --a-bubble:  #243646;
+  --a-text:    #CDD3DE;
+  --inp-bg:    #243646;
+}
+[data-theme="soft"] {
+  --bg:        #faf7f2;
+  --bg2:       #f0ebe3;
+  --sidebar:   #ede8e0;
+  --text:      #2d2416;
+  --muted:     #8b7355;
+  --border:    #ddd5c8;
+  --accent:    #7c3aed;
+  --accent2:   #a78bfa;
+  --nav-act:   #7c3aed;
+  --nav-txt:   #8b7355;
+  --u-bubble:  #7c3aed;
+  --u-text:    #ffffff;
+  --a-bubble:  #e9e4db;
+  --a-text:    #2d2416;
+  --inp-bg:    #e9e4db;
+}
+
+html, body { height: 100%; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; line-height: 1.6; background: var(--bg2); color: var(--text); }
+
+.app { display: flex; height: 100vh; max-width: 1100px; margin: 0 auto; background: var(--bg); box-shadow: 0 0 40px rgba(0,0,0,.12); }
+
+/* SIDEBAR */
+.sidebar {
+  width: 200px; flex-shrink: 0; background: var(--sidebar);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+}
+.sb-header {
+  padding: 18px 16px 12px; border-bottom: 1px solid var(--border);
+}
+.sb-logo { font-weight: 800; font-size: 18px; letter-spacing: -0.5px; color: var(--text); }
+.sb-sub  { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+.sb-nav { flex: 1; padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px; border-radius: var(--r);
+  color: var(--nav-txt); cursor: pointer; font-size: 13px;
+  transition: all .15s; user-select: none;
+}
+.nav-item:hover { background: var(--border); color: var(--text); }
+.nav-item.active { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--nav-act); font-weight: 600; }
+.nav-icon { font-size: 16px; width: 20px; text-align: center; flex-shrink: 0; }
+
+.sb-bottom {
+  padding: 12px 8px; border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.sb-bottom label { font-size: 10px; color: var(--muted); padding-left: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+.sb-bottom select {
+  background: var(--bg2); border: 1px solid var(--border);
+  color: var(--text); border-radius: var(--r); padding: 6px 10px;
+  font-size: 12px; font-family: inherit; cursor: pointer; outline: none; width: 100%;
+}
+.sb-controls { display: flex; gap: 4px; padding: 4px 2px; }
+.ctrl-btn {
+  flex: 1; background: none; border: 1px solid var(--border);
+  color: var(--muted); border-radius: 6px; padding: 5px 4px;
+  font-size: 11px; cursor: pointer; font-family: inherit;
+  transition: all .15s; text-align: center;
+}
+.ctrl-btn:hover, .ctrl-btn.on { border-color: var(--accent); color: var(--accent); }
+
+/* MAIN AREA */
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+.main-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 20px; border-bottom: 1px solid var(--border);
+  background: var(--bg); flex-shrink: 0;
+}
+.mh-title { font-size: 15px; font-weight: 600; color: var(--text); }
+.mh-right { display: flex; align-items: center; gap: 8px; }
+.model-badge {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: 500;
+  cursor: pointer;
+}
+.clear-btn {
+  background: none; border: 1px solid var(--border); color: var(--muted);
+  border-radius: 6px; padding: 4px 10px; font-size: 11px; cursor: pointer;
+  font-family: inherit; transition: all .15s;
+}
+.clear-btn:hover { border-color: #ef4444; color: #ef4444; }
+
+/* MESSAGES */
+.messages {
+  flex: 1; overflow-y: auto; padding: 20px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.msg-row { display: flex; gap: 12px; align-items: flex-start; }
+.msg-row.user { flex-direction: row-reverse; }
+.msg-av {
+  width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; margin-top: 2px;
+}
+.msg-av.bot { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+.msg-av.usr { background: var(--inp-bg); }
+.msg-content { max-width: 70%; display: flex; flex-direction: column; gap: 4px; }
+.msg-row.user .msg-content { align-items: flex-end; }
+.msg-name { font-size: 11px; color: var(--muted); font-weight: 500; }
+.bubble {
+  padding: 10px 14px; border-radius: 12px;
+  font-size: 14px; line-height: 1.55; word-break: break-word;
+}
+.msg-row.asst .bubble {
+  background: var(--a-bubble); color: var(--a-text);
+  border-top-left-radius: 4px;
+}
+.msg-row.user .bubble {
+  background: var(--u-bubble); color: var(--u-text);
+  border-top-right-radius: 4px;
+}
+.bubble code {
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 12.5px; opacity: 0.88;
+}
+.bubble pre {
+  background: rgba(0,0,0,.12); border-radius: 8px;
+  padding: 10px 12px; margin: 8px 0;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 12.5px; overflow-x: auto; line-height: 1.5;
+}
+.msg-row.asst .bubble pre { background: rgba(0,0,0,.06); }
+.msg-ts { font-size: 10px; color: var(--muted); padding: 0 2px; }
+.cursor {
+  display: inline-block; width: 2px; height: 14px;
+  background: var(--accent); animation: blink 1s infinite;
+  vertical-align: middle; margin-left: 2px;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+/* INPUT */
+.input-area {
+  padding: 12px 20px 16px; border-top: 1px solid var(--border);
+  background: var(--bg); flex-shrink: 0;
+}
+.input-row { display: flex; gap: 8px; align-items: flex-end; }
+textarea {
+  flex: 1; background: var(--inp-bg); border: 1.5px solid var(--border);
+  border-radius: var(--r); color: var(--text); font-family: inherit;
+  font-size: 14px; padding: 10px 14px; resize: none; outline: none;
+  line-height: 1.5; min-height: 42px; max-height: 140px;
+  transition: border-color .15s;
+}
+textarea::placeholder { color: var(--muted); }
+textarea:focus { border-color: var(--accent); }
+.send {
+  background: var(--accent); color: #fff; border: none;
+  border-radius: var(--r); padding: 10px 20px; cursor: pointer;
+  font-size: 13px; font-family: inherit; height: 42px; flex-shrink: 0;
+  font-weight: 600; transition: opacity .15s; letter-spacing: 0.3px;
+}
+.send:hover { opacity: 0.88; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sb-header">
+      <div class="sb-logo">vyrii</div>
+      <div class="sb-sub">local AI assistant</div>
+    </div>
+
+    <nav class="sb-nav">
+      <div class="nav-item active">
+        <span class="nav-icon">💬</span> Chat
+      </div>
+      <div class="nav-item">
+        <span class="nav-icon">🔄</span> Translate
+      </div>
+      <div class="nav-item">
+        <span class="nav-icon">🌐</span> WebAsk
+      </div>
+      <div class="nav-item">
+        <span class="nav-icon">🕷</span> WebCrawl
+      </div>
+      <div class="nav-item">
+        <span class="nav-icon">📁</span> Files
+      </div>
+      <div class="nav-item">
+        <span class="nav-icon">🔍</span> Scan
+      </div>
+    </nav>
+
+    <div class="sb-bottom">
+      <label>Model</label>
+      <select>
+        <option>qwen3:1.7b</option>
+        <option>gemma3:1b</option>
+        <option>llama3.2:3b</option>
+        <option>mistral:7b</option>
+      </select>
+
+      <label style="margin-top:6px">Theme</label>
+      <div class="sb-controls">
+        <button class="ctrl-btn on"  onclick="theme('light',this)">Light</button>
+        <button class="ctrl-btn"     onclick="theme('dark',this)">Dark</button>
+        <button class="ctrl-btn"     onclick="theme('ocean',this)">Ocean</button>
+        <button class="ctrl-btn"     onclick="theme('soft',this)">Soft</button>
+      </div>
+
+      <div class="sb-controls">
+        <button class="ctrl-btn" id="lang" onclick="toggleLang()">EN</button>
+        <button class="ctrl-btn">New chat</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="main-header">
+      <span class="mh-title">Chat</span>
+      <div class="mh-right">
+        <span class="model-badge">qwen3:1.7b ▾</span>
+        <button class="clear-btn">Clear</button>
+      </div>
+    </div>
+
+    <div class="messages">
+      <div class="msg-row asst">
+        <div class="msg-av bot">🤖</div>
+        <div class="msg-content">
+          <span class="msg-name">Assistant</span>
+          <div class="bubble">
+            Hello! I'm running on <code>qwen3:1.7b</code> locally via Ollama. How can I help you today?
+          </div>
+          <span class="msg-ts">14:23</span>
+        </div>
+      </div>
+
+      <div class="msg-row user">
+        <div class="msg-av usr">👤</div>
+        <div class="msg-content">
+          <span class="msg-name">You</span>
+          <div class="bubble">
+            Can you show me a simple Python function that reads a file and counts words?
+          </div>
+          <span class="msg-ts">14:23 ✓✓</span>
+        </div>
+      </div>
+
+      <div class="msg-row asst">
+        <div class="msg-av bot">🤖</div>
+        <div class="msg-content">
+          <span class="msg-name">Assistant</span>
+          <div class="bubble">
+            Sure! Here's a clean version:
+            <pre>def count_words(filepath: str) -> int:
+    with open(filepath, encoding="utf-8") as f:
+        return len(f.read().split())</pre>
+            Usage: <code>count_words("notes.txt")</code>. For large files I can show a streaming version too.<span class="cursor"></span>
+          </div>
+          <span class="msg-ts">14:23</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="input-area">
+      <div class="input-row">
+        <textarea rows="1" placeholder="Message…"></textarea>
+        <button class="send">Send →</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script>
+function theme(t, btn) {
+  document.documentElement.setAttribute('data-theme', t);
+  document.querySelectorAll('.ctrl-btn').forEach(b => {
+    if (['Light','Dark','Ocean','Soft'].includes(b.textContent)) b.classList.remove('on');
+  });
+  btn.classList.add('on');
+}
+function toggleLang() {
+  const b = document.getElementById('lang');
+  b.textContent = b.textContent === 'EN' ? 'UK' : 'EN';
+}
+</script>
+</body>
+</html>

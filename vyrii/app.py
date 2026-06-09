@@ -763,6 +763,8 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                             )
                             send_btn = gr.Button(t["send_btn"], variant="primary",
                                                  scale=1, min_width=80)
+                            stop_btn = gr.Button(t["stop_btn"], variant="stop",
+                                                 scale=1, min_width=80)
                         with gr.Row():
                             save_last_btn = gr.DownloadButton(
                                 t["save_last_btn"], variant="secondary", size="sm", scale=1,
@@ -935,8 +937,15 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     text = open_re.sub(_wrap_open, text)
                     return text.strip()
 
+                import threading as _threading
+                _stop_gen = _threading.Event()
+
+                def _do_stop():
+                    _stop_gen.set()
+
                 def _send(user_msg, messages, cid, ctx, hidden_ctx, model, url, backend_label,
                           show_thinking, timeout):
+                    _stop_gen.clear()
                     user_msg = user_msg.strip()
                     if not user_msg:
                         yield messages, cid, ctx, f"ctx: {ctx}", ""
@@ -980,6 +989,8 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     _spin = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
                     _si, full = 0, ""
                     while True:
+                        if _stop_gen.is_set():
+                            break
                         try:
                             kind, val = _chunk_q.get(timeout=0.25)
                         except _q.Empty:
@@ -1012,8 +1023,9 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                               g_model, g_url, g_backend,
                               g_thinking, s_timeout]
 
-                send_btn.click(_send, inputs=_send_in, outputs=_send_out)
-                msg_in.submit(_send,  inputs=_send_in, outputs=_send_out)
+                send_btn.click(_send,   inputs=_send_in, outputs=_send_out)
+                msg_in.submit(_send,    inputs=_send_in, outputs=_send_out)
+                stop_btn.click(_do_stop, outputs=[])
 
                 new_btn.click(
                     _new_chat,
@@ -1072,8 +1084,9 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                                         interactive=False)
 
                 with gr.Row():
-                    tr_btn     = gr.Button(t["translate_btn"], variant="primary", scale=2)
-                    tr_add_btn = gr.Button(t["add_to_chat_btn"], scale=1)
+                    tr_btn      = gr.Button(t["translate_btn"], variant="primary", scale=2)
+                    tr_add_btn  = gr.Button(t["add_to_chat_btn"], scale=1)
+                    tr_copy_btn = gr.Button(t["copy_btn"], scale=1)
 
                 def _translate_argos(text: str, from_code: str, to_code: str) -> str:
                     import re as _re
@@ -1210,6 +1223,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                 tr_btn.click(_translate, inputs=_tr_inputs, outputs=[tr_tgt])
                 tr_src.submit(_translate, inputs=_tr_inputs, outputs=[tr_tgt])
                 tr_add_btn.click(lambda c: (c, gr.update(visible=True)), inputs=[tr_tgt], outputs=[ctx_buffer, add_ctx_panel], js=_JS_SCROLL_TO_PANEL)
+                tr_copy_btn.click(None, inputs=[tr_tgt], outputs=[], js="async (text) => { await navigator.clipboard.writeText(text || ''); }")
                 tr_swap_btn.click(
                     lambda s, t: (
                         gr.update(value=t if t in (["Auto"] + _LANGS) else "Auto"),
@@ -1250,9 +1264,10 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                             obf_dst = gr.Textbox(label=t["obf_dst_label"],  lines=12, scale=1,
                                                   interactive=False)
                         with gr.Row():
-                            obf_btn     = gr.Button(t["obfuscate_btn"],   variant="primary", scale=1)
-                            deobf_btn   = gr.Button(t["deobfuscate_btn"], scale=1)
-                            obf_add_btn = gr.Button(t["add_to_chat_btn"],    scale=1)
+                            obf_btn      = gr.Button(t["obfuscate_btn"],   variant="primary", scale=1)
+                            deobf_btn    = gr.Button(t["deobfuscate_btn"], scale=1)
+                            obf_add_btn  = gr.Button(t["add_to_chat_btn"], scale=1)
+                            obf_copy_btn = gr.Button(t["copy_btn"],        scale=1)
 
                 def _parse_yaml_glossary(text: str) -> dict:
                     result = {}
@@ -1337,6 +1352,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     outputs=[obf_src],
                 )
                 obf_add_btn.click(lambda c: (c, gr.update(visible=True)), inputs=[obf_dst], outputs=[ctx_buffer, add_ctx_panel], js=_JS_SCROLL_TO_PANEL)
+                obf_copy_btn.click(None, inputs=[obf_dst], outputs=[], js="async (text) => { await navigator.clipboard.writeText(text || ''); }")
 
             # ══════════════════════════════════════════════════════════════════
             # RAG
@@ -1355,6 +1371,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                 with gr.Row():
                     rag_tab_search_btn = gr.Button(t["rag_search_btn"], variant="primary", scale=2)
                     rag_tab_add_btn    = gr.Button(t["add_to_chat_btn"], scale=1)
+                    rag_tab_copy_btn   = gr.Button(t["copy_btn"], scale=1)
 
                 rag_out     = gr.Markdown(label=t["rag_results_label"])
                 rag_ask_btn = gr.Button(t["rag_ask_llm_btn"], variant="secondary", visible=False)
@@ -1381,6 +1398,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     outputs=[ctx_buffer, ctx_sources, add_ctx_panel],
                     js=_JS_SCROLL_TO_PANEL,
                 )
+                rag_tab_copy_btn.click(None, inputs=[rag_out], outputs=[], js="async (text) => { await navigator.clipboard.writeText(text || ''); }")
                 rag_tab_refresh.click(
                     lambda: gr.update(choices=[""] + _list_rag_projects()),
                     outputs=[rag_tab_project],
@@ -1441,8 +1459,9 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     mcp_param_inputs.append(_pv)
 
                 with gr.Row():
-                    mcp_call_btn = gr.Button(t["mcp_call_btn"], variant="primary", scale=2)
-                    mcp_send_btn = gr.Button(t["add_to_chat_btn"], scale=1)
+                    mcp_call_btn  = gr.Button(t["mcp_call_btn"], variant="primary", scale=2)
+                    mcp_send_btn  = gr.Button(t["add_to_chat_btn"], scale=1)
+                    mcp_copy_btn  = gr.Button(t["copy_btn"], scale=1)
 
                 mcp_result_out = gr.Markdown("")
                 mcp_result_ctx = gr.State("")
@@ -1598,6 +1617,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     outputs=[ctx_buffer, add_ctx_panel],
                     js=_JS_SCROLL_TO_PANEL,
                 )
+                mcp_copy_btn.click(None, inputs=[mcp_result_out], outputs=[], js="async (text) => { await navigator.clipboard.writeText(text || ''); }")
 
             # Team
             # ══════════════════════════════════════════════════════════════════
@@ -1647,6 +1667,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     team_clear_btn = gr.Button(t["team_clear_btn"], scale=1)
                     team_run_btn   = gr.Button(t["team_run_btn"], variant="primary", scale=2)
                     team_add_btn   = gr.Button(t["add_to_chat_btn"], scale=1)
+                    team_copy_btn  = gr.Button(t["copy_btn"], scale=1)
 
                 team_progress  = gr.Markdown("")
                 team_result_md = gr.Markdown("")
@@ -1771,6 +1792,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     outputs=[ctx_buffer, add_ctx_panel],
                     js=_JS_SCROLL_TO_PANEL,
                 )
+                team_copy_btn.click(None, inputs=[team_result_md], outputs=[], js="async (text) => { await navigator.clipboard.writeText(text || ''); }")
 
             # ══════════════════════════════════════════════════════════════════
             # WebAsk
@@ -1790,8 +1812,9 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                 wa_n = gr.Slider(1, 10, value=3, step=1,
                                  label=t["wa_n_label"])
                 with gr.Row():
-                    wa_btn     = gr.Button(t["webask_btn"], variant="primary", scale=2)
-                    wa_add_btn = gr.Button(t["add_to_chat_btn"], scale=1)
+                    wa_btn      = gr.Button(t["webask_btn"], variant="primary", scale=2)
+                    wa_add_btn  = gr.Button(t["add_to_chat_btn"], scale=1)
+                    wa_copy_btn = gr.Button(t["copy_btn"], scale=1)
                 wa_out      = gr.Markdown(label=t["wa_answer_label"])
                 wa_full_ctx  = gr.State("")   # question + sources + page text + answer
                 wa_src_only  = gr.State("")   # question + URL list only
@@ -1895,6 +1918,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     outputs=[ctx_buffer, ctx_sources, add_ctx_panel],
                     js=_JS_SCROLL_TO_PANEL,
                 )
+                wa_copy_btn.click(None, inputs=[wa_out], outputs=[], js="async (text) => { await navigator.clipboard.writeText(text || ''); }")
 
             # ══════════════════════════════════════════════════════════════════
             # WebAnalys
@@ -1909,8 +1933,9 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                 wan_n = gr.Slider(1, 300, value=5, step=1,
                                   label=t["wan_n_label"])
                 with gr.Row():
-                    wan_btn     = gr.Button(t["webanalys_btn"], variant="primary", scale=2)
-                    wan_add_btn = gr.Button(t["add_to_chat_btn"], scale=1)
+                    wan_btn      = gr.Button(t["webanalys_btn"], variant="primary", scale=2)
+                    wan_add_btn  = gr.Button(t["add_to_chat_btn"], scale=1)
+                    wan_copy_btn = gr.Button(t["copy_btn"], scale=1)
                 wan_out = gr.Markdown(label=t["wan_results_label"])
 
                 def _webanalys(query, n, model, ollama_u, backend_label, timeout):
@@ -2028,6 +2053,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     outputs=[wan_out],
                 )
                 wan_add_btn.click(lambda c: (c, gr.update(visible=True)), inputs=[wan_out], outputs=[ctx_buffer, add_ctx_panel], js=_JS_SCROLL_TO_PANEL)
+                wan_copy_btn.click(None, inputs=[wan_out], outputs=[], js="async (text) => { await navigator.clipboard.writeText(text || ''); }")
 
             # ══════════════════════════════════════════════════════════════════
             # WebCrawl
@@ -2087,8 +2113,9 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                                                              size="sm", visible=False)
                     with gr.Column(scale=2):
                         with gr.Row():
-                            wc_btn     = gr.Button(t["webcrawl_btn"], variant="primary", scale=2)
-                            wc_add_btn = gr.Button(t["add_to_chat_btn"], scale=1)
+                            wc_btn      = gr.Button(t["webcrawl_btn"], variant="primary", scale=2)
+                            wc_add_btn  = gr.Button(t["add_to_chat_btn"], scale=1)
+                            wc_copy_btn = gr.Button(t["copy_btn"], scale=1)
                         wc_out = gr.Markdown(label=t["wc_results_label"])
 
                 def _wc_mode_change(mode, filter_val):
@@ -2172,7 +2199,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     elif filter_mode == "llm":
                         args += " --filter llm"
 
-                    task_str = task.strip()
+                    task_str = (task or "").strip()
                     if task_str and (mode == "llm" or filter_mode == "llm"):
                         args += f' --task "{task_str}"'
 
@@ -2218,6 +2245,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     outputs=[wc_out],
                 )
                 wc_add_btn.click(lambda c: (c, gr.update(visible=True)), inputs=[wc_out], outputs=[ctx_buffer, add_ctx_panel], js=_JS_SCROLL_TO_PANEL)
+                wc_copy_btn.click(None, inputs=[wc_out], outputs=[], js="async (text) => { await navigator.clipboard.writeText(text || ''); }")
 
             # ══════════════════════════════════════════════════════════════════
             # WebIndex
@@ -2338,8 +2366,9 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     dam_profile_refresh = gr.Button(t["files_refresh_btn"], size="sm", scale=1)
 
                 with gr.Row():
-                    dam_btn     = gr.Button(t["deepagent_generate_btn"], variant="primary", scale=2)
-                    dam_add_btn = gr.Button(t["add_to_chat_btn"], scale=1)
+                    dam_btn      = gr.Button(t["deepagent_generate_btn"], variant="primary", scale=2)
+                    dam_add_btn  = gr.Button(t["add_to_chat_btn"], scale=1)
+                    dam_copy_btn = gr.Button(t["copy_btn"], scale=1)
                 dam_out = gr.Markdown(label=t["dam_document_label"])
 
                 dam_use_web.change(
@@ -2508,6 +2537,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     outputs=[dam_out],
                 )
                 dam_add_btn.click(lambda c: (c, gr.update(visible=True)), inputs=[dam_out], outputs=[ctx_buffer, add_ctx_panel], js=_JS_SCROLL_TO_PANEL)
+                dam_copy_btn.click(None, inputs=[dam_out], outputs=[], js="async (text) => { await navigator.clipboard.writeText(text || ''); }")
 
             # ══════════════════════════════════════════════════════════════════
             # Scan (compact)
@@ -3184,6 +3214,31 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
 
                 s_lang_save.click(_do_save_lang, inputs=[s_lang], outputs=[s_lang_hint])
 
+                gr.Markdown(t["settings_auth_header"])
+                with gr.Row():
+                    s_auth_user = gr.Textbox(
+                        value=_cfg_now.get("auth_user", "admin"),
+                        label=t["settings_auth_user_label"], scale=2,
+                    )
+                    s_auth_pass = gr.Textbox(
+                        value="", label=t["settings_auth_pass_label"],
+                        type="password", scale=2,
+                    )
+                    s_auth_save   = gr.Button(t["settings_auth_save_btn"], scale=1)
+                    s_auth_logout = gr.Button(t["settings_auth_logout_btn"], scale=1, variant="stop")
+                s_auth_hint = gr.Markdown("")
+
+                def _do_save_auth(user, pwd):
+                    user = (user or "").strip()
+                    if not user or not pwd:
+                        return "Username and password are required."
+                    _save_config({"auth_user": user, "auth_pass": pwd})
+                    return t["settings_auth_saved"]
+
+                s_auth_save.click(_do_save_auth, inputs=[s_auth_user, s_auth_pass],
+                                  outputs=[s_auth_hint])
+                s_auth_logout.click(None, js="() => { window.location.href = '/logout'; }")
+
                 gr.Markdown(t["settings_control_header"])
                 with gr.Row():
                     s_restart_btn  = gr.Button(t["settings_restart_btn"], variant="secondary", size="sm", scale=1)
@@ -3216,7 +3271,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                 s_sys_status = gr.Markdown("")
 
                 s_restart_btn.click(
-                    lambda d: _sys_restart(d),
+                    lambda d: _sys_restart(d if d else 8),
                     inputs=[s_restart_delay],
                     outputs=[s_sys_status],
                     js="""(delay) => {
@@ -3280,6 +3335,16 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
     return app
 
 
+def _vyrii_auth(username: str, password: str) -> bool:
+    """Callable for Gradio auth= — reads credentials from ~/.vyrii/config.json."""
+    import json as _j
+    try:
+        cfg = _j.loads((_pathlib.Path.home() / ".vyrii" / "config.json").read_text(encoding="utf-8"))
+    except Exception:
+        cfg = {}
+    return username == cfg.get("auth_user", "admin") and password == cfg.get("auth_pass", "admin")
+
+
 def main(
     port: int = 4896,
     host: str = "0.0.0.0",
@@ -3287,10 +3352,12 @@ def main(
     openai_url: str = _DEFAULT_OPENAI,
     lang: str = "en",
     startup_model: str | None = None,
+    auth: bool = False,
 ):
     import gradio as gr
     app = build_app(ollama_url=ollama_url, openai_url=openai_url, lang=lang,
                     startup_model=startup_model)
     print(f"vyrii — open: http://localhost:{port}")
     app.launch(server_name=host, server_port=port, head=_HEAD_HTML,
+               auth=_vyrii_auth if auth else None,
                theme=getattr(app, "_vyrii_theme", None))

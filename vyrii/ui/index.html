@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="ocean">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>vyrii</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<link rel="stylesheet" id="theme-link" href="themes/ocean.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- ═══════════════════ SIDEBAR ═══════════════════ -->
+  <aside class="sidebar">
+
+    <div class="sb-brand">
+      <span class="sb-logo" data-i18n="logo">V Y R I I</span>
+      <span class="sb-tagline" data-i18n="tagline">local AI tools</span>
+    </div>
+
+    <nav class="sb-nav">
+      <button class="nav-item active" data-tab="chat">
+        <span class="ni-icon">💬</span>
+        <span class="ni-label" data-i18n="tab_chat">Chat</span>
+      </button>
+      <button class="nav-item" data-tab="translate">
+        <span class="ni-icon">🔄</span>
+        <span class="ni-label" data-i18n="tab_translate">Translate</span>
+      </button>
+      <button class="nav-item" data-tab="obfuscate">
+        <span class="ni-icon">🔒</span>
+        <span class="ni-label" data-i18n="tab_obfuscate">Obfuscate</span>
+      </button>
+      <button class="nav-item" data-tab="rag">
+        <span class="ni-icon">🗂️</span>
+        <span class="ni-label" data-i18n="tab_rag">RAG</span>
+      </button>
+      <button class="nav-item" data-tab="team">
+        <span class="ni-icon">⚡</span>
+        <span class="ni-label" data-i18n="tab_team">Колектив</span>
+      </button>
+      <button class="nav-item" data-tab="webask">
+        <span class="ni-icon">🌐</span>
+        <span class="ni-label">WebAsk</span>
+      </button>
+      <button class="nav-item" data-tab="webanalys">
+        <span class="ni-icon">📊</span>
+        <span class="ni-label" data-i18n="tab_webanalys">WebAnalys</span>
+      </button>
+      <button class="nav-item" data-tab="webcrawl">
+        <span class="ni-icon">🕷️</span>
+        <span class="ni-label" data-i18n="tab_webcrawl">WebCrawl</span>
+      </button>
+      <button class="nav-item" data-tab="webindex">
+        <span class="ni-icon">🌍</span>
+        <span class="ni-label" data-i18n="tab_webindex">WebIndex</span>
+      </button>
+      <button class="nav-item" data-tab="deepagent">
+        <span class="ni-icon">📄</span>
+        <span class="ni-label" data-i18n="tab_deepagent">DeepAgent</span>
+      </button>
+      <button class="nav-item" data-tab="scan">
+        <span class="ni-icon">🔍</span>
+        <span class="ni-label" data-i18n="tab_scan">Scan</span>
+      </button>
+      <button class="nav-item" data-tab="files">
+        <span class="ni-icon">📁</span>
+        <span class="ni-label" data-i18n="tab_files">Files</span>
+      </button>
+      <button class="nav-item" data-tab="profile">
+        <span class="ni-icon">🖥️</span>
+        <span class="ni-label" data-i18n="tab_profile">Profiles</span>
+      </button>
+      <button class="nav-item" data-tab="settings">
+        <span class="ni-icon">⚙️</span>
+        <span class="ni-label" data-i18n="tab_settings">Settings</span>
+      </button>
+    </nav>
+
+    <div class="sb-footer">
+      <div>
+        <label class="sf-label" data-i18n="label_model">Model</label>
+        <select id="g-model" class="sf-select" onchange="onModelChange()">
+          <option value="">loading…</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="sf-label" data-i18n="label_theme">Theme</label>
+        <select id="theme-select" class="sf-select" onchange="setTheme(this.value)">
+          <option value="ocean">Ocean</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="sf-label" data-i18n="label_lang">Language</label>
+        <select id="lang-select" class="sf-select" onchange="setLang(this.value)">
+          <option value="en">EN — English</option>
+          <option value="uk">UK — Українська</option>
+          <option value="de">DE — Deutsch</option>
+          <option value="fr">FR — Français</option>
+          <option value="es">ES — Español</option>
+          <option value="pt">PT — Português</option>
+        </select>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ═══════════════════ CONTENT ═══════════════════ -->
+  <main class="content">
+
+    <!-- ── CHAT ── -->
+    <div class="tab-panel active" id="tab-chat">
+      <div class="panel-header">
+        <h1 class="ph-title" data-i18n="tab_chat">Chat</h1>
+        <div class="ph-actions">
+          <span id="chat-status" class="status-bar" style="display:none">
+            <span class="status-dot"></span>
+            <span data-i18n="generating">Generating…</span>
+          </span>
+          <button class="btn btn-ghost btn-sm" onclick="toggleHistory()" data-i18n="history">History</button>
+          <button class="btn btn-ghost btn-sm" onclick="newChat()" data-i18n="new_chat">New chat</button>
+          <button class="btn btn-ghost btn-sm" onclick="clearChat()" data-i18n="clear">Clear</button>
+        </div>
+      </div>
+      <div class="chat-body">
+
+        <!-- history drawer -->
+        <div id="chat-hist-panel" class="chat-hist-panel">
+          <div class="chp-header">
+            <span class="form-label" data-i18n="history">History</span>
+            <button class="btn btn-ghost btn-sm" onclick="toggleHistory()">✕</button>
+          </div>
+          <div style="padding:8px 10px">
+            <input id="chp-search" type="text" class="form-control"
+              data-i18n-ph="hist_search_ph" placeholder="Search…"
+              oninput="searchHistory(this.value)">
+          </div>
+          <div id="chp-list" class="chp-list">
+            <div class="placeholder-text" style="padding:16px 12px" data-i18n="hist_empty">No conversations yet</div>
+          </div>
+        </div>
+
+        <!-- chat main area -->
+        <div class="chat-main">
+          <div class="messages" id="chat-messages">
+            <div class="placeholder-text" style="text-align:center;padding:40px 0" data-i18n="chat_empty">Start a conversation…</div>
+          </div>
+          <div class="chat-input">
+            <textarea id="chat-input" rows="1"
+              data-i18n-ph="message_ph"
+              placeholder="Message… (Shift+Enter to send)"
+              onkeydown="chatKeyDown(event)"
+              oninput="autoResize(this)"></textarea>
+            <button class="btn btn-primary" id="chat-send" onclick="sendChat()" data-i18n="send">Send</button>
+            <button class="btn btn-danger" id="chat-stop" onclick="interruptChat()" data-i18n="stop" style="display:none">Stop</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── TRANSLATE ── -->
+    <div class="tab-panel" id="tab-translate">
+      <div class="panel-header">
+        <h1 class="ph-title" data-i18n="tab_translate">Translate</h1>
+      </div>
+      <div class="panel-body">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" data-i18n="from_lang">From</label>
+            <select id="tr-from" class="form-control">
+              <option value="Auto">Auto</option>
+              <option value="English">English</option>
+              <option value="Ukrainian">Ukrainian</option>
+              <option value="German">German</option>
+              <option value="French">French</option>
+              <option value="Spanish">Spanish</option>
+              <option value="Polish">Polish</option>
+              <option value="Italian">Italian</option>
+              <option value="Portuguese">Portuguese</option>
+              <option value="Chinese">Chinese</option>
+              <option value="Japanese">Japanese</option>
+              <option value="Arabic">Arabic</option>
+            </select>
+          </div>
+          <button class="btn btn-ghost swap-btn" onclick="swapLangs()" title="Swap languages">⟷</button>
+          <div class="form-group">
+            <label class="form-label" data-i18n="to_lang">To</label>
+            <select id="tr-to" class="form-control">
+              <option value="Ukrainian">Ukrainian</option>
+              <option value="English">English</option>
+              <option value="German">German</option>
+              <option value="French">French</option>
+              <option value="Spanish">Spanish</option>
+              <option value="Polish">Polish</option>
+              <option value="Italian">Italian</option>
+              <option value="Portuguese">Portuguese</option>
+              <option value="Chinese">Chinese</option>
+              <option value="Japanese">Japanese</option>
+              <option value="Arabic">Arabic</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="mode">Mode</label>
+            <select id="tr-mode" class="form-control">
+              <option value="llm">LLM</option>
+              <option value="argos">Argos</option>
+              <option value="nllb">NLLB-200</option>
+            </select>
+          </div>
+        </div>
+        <div class="split-pane" style="flex:1;min-height:200px">
+          <div class="split-half">
+            <div class="form-group" style="flex:1;display:flex;flex-direction:column">
+              <label class="form-label" data-i18n="source_text">Source text</label>
+              <textarea id="tr-input" class="form-control form-textarea" style="flex:1"
+                data-i18n-ph="source_ph" placeholder="Text to translate…"></textarea>
+            </div>
+          </div>
+          <div class="split-half">
+            <div class="form-group" style="flex:1;display:flex;flex-direction:column">
+              <label class="form-label" data-i18n="translation">Translation</label>
+              <div class="result-box" id="tr-result" style="flex:1">
+                <span class="placeholder-text" data-i18n="result_here">Result will appear here…</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" onclick="runTranslate()" data-i18n="translate_btn">Translate</button>
+          <button class="btn btn-ghost" onclick="addToChat('tr-result')" data-i18n="add_to_chat">Add to chat</button>
+          <button class="btn btn-ghost" onclick="copyResult('tr-result')" data-i18n="copy">Copy</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── WEBASK ── -->
+    <div class="tab-panel" id="tab-webask">
+      <div class="panel-header"><h1 class="ph-title">WebAsk</h1></div>
+      <div class="panel-body">
+        <div class="form-group">
+          <label class="form-label" data-i18n="question">Question</label>
+          <textarea id="wa-question" class="form-control" rows="3"
+            data-i18n-ph="question_ph" placeholder="What would you like to know?"></textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group flex-grow">
+            <label class="form-label">URL <span class="placeholder-text" data-i18n="optional">(optional)</span></label>
+            <input id="wa-url" type="url" class="form-control" placeholder="https://...">
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="top_n">Top N</label>
+            <input id="wa-n" type="number" class="form-control form-control-sm" value="3" min="1" max="10">
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" onclick="runWebAsk()" data-i18n="ask">Ask</button>
+          <button class="btn btn-ghost" onclick="addToChat('wa-result')" data-i18n="add_to_chat">Add to chat</button>
+          <button class="btn btn-ghost" onclick="copyResult('wa-result')" data-i18n="copy">Copy</button>
+        </div>
+        <div class="result-box" id="wa-result">
+          <span class="placeholder-text" data-i18n="result_here">Result will appear here…</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── WEBCRAWL ── -->
+    <div class="tab-panel" id="tab-webcrawl">
+      <div class="panel-header"><h1 class="ph-title">WebCrawl</h1></div>
+      <div class="panel-body">
+
+        <div class="form-group">
+          <label class="form-label">URL</label>
+          <input id="wc-url" type="url" class="form-control" placeholder="https://...">
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-grow">
+            <label class="form-label" data-i18n="wc_mode">Mode</label>
+            <select id="wc-mode" class="form-control" onchange="wcUpdateVisibility()">
+              <option value="combine">combine — one merged file</option>
+              <option value="pages">pages — one file per page</option>
+              <option value="extract">extract — XPath → CSV</option>
+              <option value="mirror">mirror — save as HTML</option>
+              <option value="llm">llm — filter + extract per page</option>
+            </select>
+          </div>
+          <div class="form-group flex-grow">
+            <label class="form-label" data-i18n="wc_filter">Filter</label>
+            <select id="wc-filter" class="form-control" onchange="wcUpdateVisibility()">
+              <option value="none">none</option>
+              <option value="url-prefix">url-prefix — stay under start path</option>
+              <option value="llm">llm — LLM relevance filter</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" data-i18n="depth">Depth</label>
+            <input id="wc-depth" type="number" class="form-control form-control-sm" value="2" min="1" max="10">
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="max_pages">Max pages</label>
+            <input id="wc-pages" type="number" class="form-control form-control-sm" value="20" min="0">
+          </div>
+          <div class="form-group" style="justify-content:flex-end;padding-bottom:4px">
+            <label style="display:flex;align-items:center;gap:7px;cursor:pointer">
+              <input type="checkbox" id="wc-ask" class="form-check">
+              <span data-i18n="wc_ask">Ask LLM summary</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- task — shown for llm mode or llm filter -->
+        <div class="form-group" id="wc-task-wrap" style="display:none">
+          <label class="form-label" data-i18n="task">Task / goal</label>
+          <textarea id="wc-task" class="form-control" rows="2"
+            data-i18n-ph="task_ph" placeholder="Summarize the main content…"></textarea>
+        </div>
+
+        <!-- format — shown for llm mode only -->
+        <div class="form-row" id="wc-format-wrap" style="display:none;align-items:center;gap:16px">
+          <label class="form-label" style="margin:0" data-i18n="wc_format">Output format:</label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer">
+            <input type="radio" name="wc-format" value="log" checked> log
+          </label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer">
+            <input type="radio" name="wc-format" value="structured"> structured
+          </label>
+        </div>
+
+        <!-- columns YAML — shown for extract or llm mode -->
+        <div class="form-group" id="wc-columns-wrap" style="display:none">
+          <label class="form-label" data-i18n="wc_columns">Columns (YAML / XPath)</label>
+          <textarea id="wc-columns" class="form-control" rows="4"
+            style="font-family:'Cascadia Code','Fira Code','Consolas',monospace;font-size:12.5px"
+            placeholder='title:   "//h1/text()"&#10;content: "//article//text()"'></textarea>
+        </div>
+
+        <div class="form-actions">
+          <button class="btn btn-primary" onclick="runWebCrawl()" data-i18n="crawl">Crawl</button>
+          <button class="btn btn-ghost" onclick="addToChat('wc-result')" data-i18n="add_to_chat">Add to chat</button>
+          <button class="btn btn-ghost" onclick="copyResult('wc-result')" data-i18n="copy">Copy</button>
+        </div>
+
+        <div class="result-box" id="wc-result" style="flex:1">
+          <span class="placeholder-text" data-i18n="result_here">Result will appear here…</span>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── WEBANALYS ── -->
+    <div class="tab-panel" id="tab-webanalys">
+      <div class="panel-header"><h1 class="ph-title">WebAnalys</h1></div>
+      <div class="panel-body">
+        <div class="form-group">
+          <label class="form-label" data-i18n="query">Query</label>
+          <input id="wan-query" type="text" class="form-control"
+            data-i18n-ph="query_ph" placeholder="Search topic…">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" data-i18n="results">Results</label>
+            <input id="wan-n" type="number" class="form-control form-control-sm" value="5" min="1" max="20">
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" onclick="runWebAnalys()" data-i18n="analyze">Analyze</button>
+          <button class="btn btn-ghost" onclick="addToChat('wan-result')" data-i18n="add_to_chat">Add to chat</button>
+          <button class="btn btn-ghost" onclick="copyResult('wan-result')" data-i18n="copy">Copy</button>
+        </div>
+        <div class="result-box" id="wan-result">
+          <span class="placeholder-text" data-i18n="result_here">Result will appear here…</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── DEEPAGENT ── -->
+    <div class="tab-panel" id="tab-deepagent">
+      <div class="panel-header"><h1 class="ph-title">DeepAgent MD</h1></div>
+      <div class="panel-body">
+        <div class="form-group">
+          <label class="form-label" data-i18n="task">Task / Topic</label>
+          <textarea id="da-task" class="form-control" rows="4"
+            data-i18n-ph="da_task_ph" placeholder="Describe the document you want to generate…"></textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group flex-grow">
+            <label class="form-label">Reference URL <span class="placeholder-text" data-i18n="optional">(optional)</span></label>
+            <input id="da-ref" type="url" class="form-control" placeholder="https://...">
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="sections">Sections</label>
+            <input id="da-sections" type="number" class="form-control form-control-sm" value="3" min="1" max="10">
+          </div>
+        </div>
+        <div class="form-row" style="align-items:center;gap:20px;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer">
+            <input type="checkbox" id="da-web" class="form-check" onchange="daWebToggle()">
+            <span data-i18n="da_use_web">Web search</span>
+          </label>
+          <div id="da-web-n-wrap" style="display:none">
+            <label class="form-label" style="display:inline" data-i18n="da_web_n">Results/section</label>
+            <input id="da-web-n" type="number" class="form-control form-control-sm"
+                   value="3" min="1" max="10" style="display:inline-block;width:70px;margin-left:6px">
+          </div>
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer">
+            <input type="checkbox" id="da-rag-chk" class="form-check" onchange="daRagToggle()">
+            <span data-i18n="da_use_rag">RAG</span>
+          </label>
+          <div id="da-rag-wrap" style="display:none;align-items:center;gap:6px">
+            <select id="da-rag-project" class="form-control" style="min-width:160px">
+              <option value="" data-i18n="rag_select_project">— select project —</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" onclick="daRagRefresh()" title="Refresh">↺</button>
+          </div>
+          <label style="display:flex;align-items:center;gap:7px;cursor:pointer">
+            <input type="checkbox" id="da-team-chk" class="form-check" onchange="daTeamToggle()">
+            <span data-i18n="da_use_team">Team</span>
+          </label>
+          <div id="da-team-wrap" style="display:none;align-items:center;gap:6px">
+            <select id="da-team-profile" class="form-control" style="min-width:160px">
+              <option value="">— select profile —</option>
+            </select>
+            <select id="da-team-combine" class="form-control" style="min-width:90px">
+              <option value="join">join</option>
+              <option value="compact">compact</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" onclick="daTeamRefresh()" title="Refresh">↺</button>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" onclick="runDeepAgent()" data-i18n="generate">Generate</button>
+          <button class="btn btn-ghost" onclick="addToChat('da-result')" data-i18n="add_to_chat">Add to chat</button>
+          <button class="btn btn-ghost" onclick="copyResult('da-result')" data-i18n="copy">Copy</button>
+        </div>
+        <div class="result-box" id="da-result" style="flex:1;min-height:200px">
+          <span class="placeholder-text" data-i18n="result_here">Result will appear here…</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SCAN ── -->
+    <div class="tab-panel" id="tab-scan">
+      <div class="panel-header"><h1 class="ph-title">Scan</h1></div>
+      <div class="panel-body">
+        <div class="form-group">
+          <label class="form-label" data-i18n="path">Path</label>
+          <input id="sc-path" type="text" class="form-control" placeholder="/path/to/file-or-directory">
+        </div>
+        <div class="form-group">
+          <label class="form-label" data-i18n="query_optional">Query <span class="placeholder-text">(optional)</span></label>
+          <input id="sc-query" type="text" class="form-control" data-i18n-ph="sc_query_ph" placeholder="Filter by topic…">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" data-i18n="chunk">Chunk</label>
+            <input id="sc-chunk" type="number" class="form-control form-control-sm" value="4000" min="500">
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="summary_size">Summary</label>
+            <input id="sc-summary" type="number" class="form-control form-control-sm" value="400" min="50">
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="target">Target</label>
+            <input id="sc-target" type="number" class="form-control form-control-sm" value="8000" min="1000">
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="rounds">Rounds</label>
+            <input id="sc-rounds" type="number" class="form-control form-control-sm" value="1" min="1" max="10">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" data-i18n="extensions">Extensions</label>
+          <input id="sc-ext" type="text" class="form-control" value="txt,md,py,rst,js,ts,java,cpp,c,h">
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" onclick="runScan()" data-i18n="compact">Compact</button>
+          <button class="btn btn-ghost" onclick="addToChat('sc-result')" data-i18n="add_to_chat">Add to chat</button>
+          <button class="btn btn-ghost" onclick="copyResult('sc-result')" data-i18n="copy">Copy</button>
+        </div>
+        <div class="result-box" id="sc-result" style="flex:1">
+          <span class="placeholder-text" data-i18n="result_here">Result will appear here…</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── WEBINDEX ── -->
+    <div class="tab-panel" id="tab-webindex">
+      <div class="panel-header"><h1 class="ph-title">WebIndex</h1></div>
+      <div class="panel-body">
+        <div class="form-group">
+          <label class="form-label">URL</label>
+          <input id="wi-url" type="url" class="form-control" placeholder="https://...">
+        </div>
+        <div class="form-row">
+          <div class="form-group flex-grow">
+            <label class="form-label" data-i18n="project_name">Project name</label>
+            <input id="wi-project" type="text" class="form-control" placeholder="my_project">
+          </div>
+          <div class="form-group flex-grow">
+            <label class="form-label" data-i18n="output_path">Output path <span class="placeholder-text">(optional)</span></label>
+            <input id="wi-path" type="text" class="form-control" placeholder="/path/to/store  (default: cwd)">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" data-i18n="depth">Depth</label>
+            <input id="wi-depth" type="number" class="form-control form-control-sm" value="2" min="1" max="5">
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="max_pages">Max pages</label>
+            <input id="wi-pages" type="number" class="form-control form-control-sm" value="20" min="1" max="100">
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" onclick="runWebIndex()" data-i18n="index">Index</button>
+          <button class="btn btn-ghost" onclick="addToChat('wi-result')" data-i18n="add_to_chat">Add to chat</button>
+          <button class="btn btn-ghost" onclick="copyResult('wi-result')" data-i18n="copy">Copy</button>
+        </div>
+        <div class="result-box" id="wi-result">
+          <span class="placeholder-text" data-i18n="result_here">Result will appear here…</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── OBFUSCATE ── -->
+    <div class="tab-panel" id="tab-obfuscate">
+      <div class="panel-header">
+        <h1 class="ph-title" data-i18n="tab_obfuscate">Obfuscate / Deobfuscate</h1>
+      </div>
+      <div class="panel-body">
+        <div class="split-pane" style="flex:1">
+
+          <div class="split-half">
+            <div class="section-title" data-i18n="obfuscate_title">Obfuscate</div>
+            <div class="form-group" style="flex:1;display:flex;flex-direction:column">
+              <label class="form-label" data-i18n="text">Text</label>
+              <textarea id="of-input" class="form-control form-textarea"
+                data-i18n-ph="of_ph" placeholder="Text to obfuscate…"></textarea>
+            </div>
+            <div class="form-row">
+              <div class="form-group flex-grow">
+                <label class="form-label" data-i18n="glossary">Glossary</label>
+                <textarea id="of-glossary" class="form-control" rows="4"
+                  style="font-family:'Cascadia Code','Fira Code','Consolas',monospace;font-size:12.5px"
+                  placeholder="tanker: vessel&#10;oil:    liquid cargo&#10;port:   loading terminal"></textarea>
+              </div>
+              <div class="form-group" style="align-items:center;flex-direction:row;gap:6px;padding-top:18px">
+                <input id="of-force" type="checkbox" class="form-check">
+                <label class="form-label" style="margin:0" data-i18n="force_mode">Force</label>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" onclick="runObfuscate()" data-i18n="obfuscate_btn">Obfuscate</button>
+              <button class="btn btn-ghost" onclick="addToChat('of-result')" data-i18n="add_to_chat">Add to chat</button>
+              <button class="btn btn-ghost" onclick="copyResult('of-result')" data-i18n="copy">Copy</button>
+            </div>
+            <div class="result-box" id="of-result">
+              <span class="placeholder-text" data-i18n="result_here">Result will appear here…</span>
+            </div>
+          </div>
+
+          <div class="split-half">
+            <div class="section-title" data-i18n="deobfuscate_title">Deobfuscate</div>
+            <div class="form-group" style="flex:1;display:flex;flex-direction:column">
+              <label class="form-label" data-i18n="text">Text</label>
+              <textarea id="dof-input" class="form-control form-textarea"
+                data-i18n-ph="dof_ph" placeholder="Obfuscated text to decode…"></textarea>
+            </div>
+            <div class="form-row">
+              <div class="form-group flex-grow">
+                <label class="form-label" data-i18n="glossary">Glossary</label>
+                <textarea id="dof-glossary" class="form-control" rows="4"
+                  style="font-family:'Cascadia Code','Fira Code','Consolas',monospace;font-size:12.5px"
+                  placeholder="tanker: vessel&#10;oil:    liquid cargo&#10;port:   loading terminal"></textarea>
+              </div>
+              <div class="form-group" style="align-items:center;flex-direction:row;gap:6px;padding-top:18px">
+                <input id="dof-force" type="checkbox" class="form-check">
+                <label class="form-label" style="margin:0" data-i18n="force_mode">Force</label>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" onclick="runDeobfuscate()" data-i18n="deobfuscate_btn">Decode</button>
+              <button class="btn btn-ghost" onclick="addToChat('dof-result')" data-i18n="add_to_chat">Add to chat</button>
+              <button class="btn btn-ghost" onclick="copyResult('dof-result')" data-i18n="copy">Copy</button>
+            </div>
+            <div class="result-box" id="dof-result">
+              <span class="placeholder-text" data-i18n="result_here">Result will appear here…</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ── RAG ── -->
+    <div class="tab-panel" id="tab-rag">
+      <div class="panel-header">
+        <h1 class="ph-title" data-i18n="tab_rag">RAG</h1>
+        <div class="ph-actions">
+          <button class="btn btn-ghost btn-sm" onclick="ragRefreshProjects()" data-i18n="refresh">Refresh</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="form-row">
+          <div class="form-group flex-grow">
+            <label class="form-label" data-i18n="rag_project">Project</label>
+            <select id="rag-project" class="form-control">
+              <option value="" data-i18n="rag_select_project">— select project —</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="top_n">Top K</label>
+            <input id="rag-topk" type="number" class="form-control form-control-sm"
+                   value="3" min="1" max="10">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" data-i18n="query">Query</label>
+          <textarea id="rag-query" class="form-control" rows="3"
+            data-i18n-ph="rag_query_ph" placeholder="What are you looking for?"></textarea>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" onclick="runRagSearch()" data-i18n="search">Search</button>
+          <button class="btn btn-ghost" id="rag-ask-btn" onclick="runRagAsk()"
+                  style="display:none" data-i18n="ask_llm">Ask LLM</button>
+          <button class="btn btn-ghost" onclick="addToChat('rag-results')" data-i18n="add_to_chat">Add to chat</button>
+          <button class="btn btn-ghost" onclick="copyResult('rag-results')" data-i18n="copy">Copy</button>
+        </div>
+
+        <!-- sources strip -->
+        <div id="rag-sources" style="display:none">
+          <label class="form-label" data-i18n="rag_sources">Sources</label>
+          <div id="rag-sources-list" style="font-size:12px;color:var(--text-muted);padding:4px 0"></div>
+        </div>
+
+        <div class="split-pane" style="flex:1;min-height:160px">
+          <div class="split-half">
+            <label class="form-label" data-i18n="rag_results">Results</label>
+            <div class="result-box" id="rag-results" style="flex:1">
+              <span class="placeholder-text" data-i18n="result_here">Result will appear here…</span>
+            </div>
+          </div>
+          <div class="split-half" id="rag-llm-col" style="display:none">
+            <label class="form-label" data-i18n="rag_llm_answer">LLM answer</label>
+            <div class="result-box" id="rag-llm-out" style="flex:1"></div>
+            <div class="form-actions" style="margin-top:6px">
+              <button class="btn btn-ghost" onclick="addToChat('rag-llm-out')" data-i18n="add_to_chat">Add to chat</button>
+              <button class="btn btn-ghost" onclick="copyResult('rag-llm-out')" data-i18n="copy">Copy</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SETTINGS ── -->
+    <div class="tab-panel" id="tab-settings">
+      <div class="panel-header">
+        <h1 class="ph-title" data-i18n="tab_settings">Settings</h1>
+      </div>
+      <div class="panel-body" style="max-width:640px">
+
+        <div class="settings-section">
+          <div class="settings-title" data-i18n="settings_connection">Connection</div>
+          <div class="form-group">
+            <label class="form-label">Ollama URL</label>
+            <input id="cfg-url" type="text" class="form-control" placeholder="http://localhost:11434">
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="settings_backend">Backend</label>
+            <select id="cfg-backend" class="form-control">
+              <option value="ollama">Ollama</option>
+              <option value="openai">OpenAI-compatible</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-title" data-i18n="settings_timeouts">Timeouts</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" data-i18n="settings_req_timeout">Request timeout (s)</label>
+              <input id="cfg-timeout" type="number" class="form-control form-control-sm"
+                     value="180" min="10" max="3600">
+            </div>
+            <div class="form-group">
+              <label class="form-label" data-i18n="settings_worker_timeout">Worker timeout (s)</label>
+              <input id="cfg-worker-timeout" type="number" class="form-control form-control-sm"
+                     value="300" min="30" max="3600">
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-title" data-i18n="settings_defaults">Defaults</div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="settings_default_model">Default model</label>
+            <input id="cfg-model" type="text" class="form-control" placeholder="qwen3:1.7b">
+          </div>
+          <div class="form-row">
+            <div class="form-group flex-grow">
+              <label class="form-label" data-i18n="settings_lang_default">Language</label>
+              <select id="cfg-lang" class="form-control" onchange="setLang(this.value)">
+                <option value="en">English</option>
+                <option value="uk">Українська</option>
+                <option value="de">Deutsch</option>
+                <option value="fr">Français</option>
+                <option value="es">Español</option>
+                <option value="pt">Português</option>
+              </select>
+            </div>
+            <div class="form-group flex-grow">
+              <label class="form-label" data-i18n="label_theme">Theme</label>
+              <select id="cfg-theme" class="form-control" onchange="setTheme(this.value)">
+                <option value="ocean">Ocean</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button class="btn btn-primary" onclick="saveSettings()" data-i18n="save">Save</button>
+          <span id="settings-status" style="font-size:12px;color:var(--accent);display:none"
+                data-i18n="settings_saved">Saved!</span>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-title" data-i18n="settings_auth">Authentication</div>
+          <div class="form-row">
+            <div class="form-group flex-grow">
+              <label class="form-label" data-i18n="settings_auth_user">Username</label>
+              <input id="cfg-auth-user" type="text" class="form-control" placeholder="admin">
+            </div>
+            <div class="form-group flex-grow">
+              <label class="form-label" data-i18n="settings_auth_pass">New password</label>
+              <input id="cfg-auth-pass" type="password" class="form-control">
+            </div>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" onclick="saveAuth()" data-i18n="save">Save</button>
+            <button class="btn btn-ghost" onclick="doLogout()" data-i18n="logout_btn">Log out</button>
+            <span id="auth-status" style="display:none;font-size:12px;color:var(--accent)"
+                  data-i18n="settings_saved">Saved!</span>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-title" data-i18n="settings_control">System control</div>
+          <div class="form-row" style="align-items:center;gap:16px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="sysRestart()" data-i18n="sys_restart">Restart vyrii</button>
+            <span style="width:1px;height:20px;background:var(--border)"></span>
+            <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13px">
+              <input type="checkbox" id="sys-confirm" class="form-check">
+              <span data-i18n="sys_confirm">Confirm dangerous action</span>
+            </label>
+            <button class="btn btn-danger btn-sm" onclick="sysReboot()" data-i18n="sys_reboot">Reboot PC</button>
+            <button class="btn btn-danger btn-sm" onclick="sysShutdown()" data-i18n="sys_shutdown">Shutdown PC</button>
+          </div>
+          <div id="sys-status" style="font-size:12px;color:var(--text-muted);margin-top:6px;display:none"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── FILES ── -->
+    <div class="tab-panel" id="tab-files">
+      <div class="panel-header">
+        <h1 class="ph-title" data-i18n="tab_files">Files</h1>
+        <div class="ph-actions">
+          <button class="btn btn-ghost btn-sm" onclick="refreshFiles()" data-i18n="refresh">Refresh</button>
+          <button class="btn btn-ghost btn-sm" onclick="showMkdir()" data-i18n="new_folder">New folder</button>
+          <label class="btn btn-ghost btn-sm" style="cursor:pointer">
+            <span data-i18n="upload">Upload</span>
+            <input type="file" id="file-upload-input" multiple
+              style="display:none" onchange="uploadFiles(this)">
+          </label>
+        </div>
+      </div>
+      <div class="inline-dialog" id="mkdir-dialog" style="display:none">
+        <input type="text" id="mkdir-name" class="form-control"
+          data-i18n-ph="mkdir_ph" placeholder="folder/name" style="max-width:300px">
+        <button class="btn btn-primary btn-sm" onclick="doMkdir()" data-i18n="create">Create</button>
+        <button class="btn btn-ghost btn-sm" onclick="closeMkdir()" data-i18n="cancel">Cancel</button>
+      </div>
+      <div class="files-layout">
+        <div class="files-tree" id="files-tree">
+          <div class="placeholder-text" data-i18n="loading">Loading…</div>
+        </div>
+        <div class="files-preview" id="files-preview">
+          <div class="placeholder-text" style="padding:40px 0;text-align:center" data-i18n="select_file">
+            Select a file or folder
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PROFILE ── -->
+    <div class="tab-panel" id="tab-profile">
+      <div class="panel-header">
+        <h1 class="ph-title" data-i18n="tab_profile">Profiles</h1>
+        <div class="ph-actions">
+          <button class="btn btn-ghost btn-sm" onclick="profileNew()" data-i18n="profile_new">New</button>
+        </div>
+      </div>
+      <div class="panel-body" style="flex-direction:row;gap:16px">
+        <div style="width:180px;flex-shrink:0">
+          <div class="form-label" data-i18n="saved_profiles">Saved</div>
+          <div id="profile-list" style="display:flex;flex-direction:column;gap:4px;margin-top:8px"></div>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:12px">
+          <div class="form-row">
+            <div class="form-group flex-grow">
+              <label class="form-label" data-i18n="profile_name">Name</label>
+              <input id="prof-name" type="text" class="form-control" placeholder="my-team">
+            </div>
+            <div class="form-group flex-grow">
+              <label class="form-label" data-i18n="profile_comment">Comment</label>
+              <input id="prof-comment" type="text" class="form-control" placeholder="Optional">
+            </div>
+          </div>
+          <div>
+            <div class="form-label" style="margin-bottom:8px" data-i18n="workers">Workers</div>
+            <div id="prof-workers" style="display:flex;flex-direction:column;gap:6px"></div>
+            <button class="btn btn-ghost btn-sm" onclick="profileAddWorker()" style="margin-top:6px" data-i18n="add_worker">+ Worker</button>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" onclick="profileSave()" data-i18n="save">Save</button>
+            <button class="btn btn-danger btn-sm" onclick="profileDelete()" data-i18n="delete_btn">Delete</button>
+            <span id="profile-status" style="display:none;font-size:12px;color:var(--accent)" data-i18n="settings_saved">Saved!</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── TEAM ── -->
+    <div class="tab-panel" id="tab-team">
+      <div class="panel-header">
+        <h1 class="ph-title" data-i18n="tab_team">Колектив</h1>
+        <div class="ph-actions">
+          <button class="btn btn-ghost btn-sm" onclick="teamLoadProfiles()" data-i18n="refresh">Refresh</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="form-row">
+          <div class="form-group flex-grow">
+            <label class="form-label" data-i18n="team_profile">Profile</label>
+            <select id="team-profile" class="form-control" onchange="teamLoadProfile()">
+              <option value="">— select profile —</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="team_combine">Combine</label>
+            <select id="team-combine" class="form-control">
+              <option value="join">join</option>
+              <option value="compact">compact</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="team_ctx_mode">Context</label>
+            <select id="team-ctx" class="form-control">
+              <option value="none">none</option>
+              <option value="last">last</option>
+              <option value="full">full</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" data-i18n="query">Query</label>
+          <textarea id="team-query" class="form-control" rows="4"
+            data-i18n-ph="team_query_ph" placeholder="Question for all workers…"></textarea>
+        </div>
+        <div id="team-aspects-wrap" style="display:none">
+          <label class="form-label" style="margin-bottom:6px" data-i18n="aspects">Aspects (one per worker)</label>
+          <div id="team-aspects" style="display:flex;flex-direction:column;gap:6px"></div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" onclick="runTeam()" data-i18n="run">Run</button>
+          <button class="btn btn-ghost" onclick="addToChat('team-result')" data-i18n="add_to_chat">Add to chat</button>
+          <button class="btn btn-ghost" onclick="copyResult('team-result')" data-i18n="copy">Copy</button>
+        </div>
+        <div id="team-progress" style="display:none;margin-bottom:8px;font-size:12px;color:var(--text-muted)">
+          <div id="team-progress-log" style="display:flex;flex-direction:column;gap:3px"></div>
+        </div>
+        <div class="result-box" id="team-result" style="flex:1">
+          <span class="placeholder-text" data-i18n="result_here">Result will appear here…</span>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- toast notification -->
+<div class="toast" id="toast"></div>
+
+<!-- login overlay (shown when --auth is active) -->
+<div id="login-overlay" style="display:none;position:fixed;inset:0;background:var(--bg,#0f172a);
+     z-index:9999;display:none;align-items:center;justify-content:center">
+  <div style="background:var(--sidebar-bg,#1e293b);border:1px solid var(--border,#334155);
+              border-radius:12px;padding:32px 36px;width:320px;display:flex;flex-direction:column;gap:14px">
+    <div style="font-size:22px;font-weight:700;letter-spacing:2px;text-align:center"
+         data-i18n="logo">V Y R I I</div>
+    <div class="form-group">
+      <label class="form-label" data-i18n="settings_auth_user_label">Username</label>
+      <input id="login-user" type="text" class="form-control" value="admin"
+             onkeydown="if(event.key==='Enter')document.getElementById('login-pass').focus()">
+    </div>
+    <div class="form-group">
+      <label class="form-label" data-i18n="settings_auth_pass_label">Password</label>
+      <input id="login-pass" type="password" class="form-control"
+             onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="btn btn-primary" onclick="doLogin()" data-i18n="login_btn">Log in</button>
+    <div id="login-error" style="font-size:12px;color:#ef4444;text-align:center;display:none"
+         data-i18n="login_error">Invalid credentials</div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vyrii — Bubbles</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #f0f2f5;
+  --surface:   #ffffff;
+  --text:      #1a1a1a;
+  --muted:     #65676b;
+  --border:    #dddfe2;
+  --accent:    #0084ff;
+  --u-bubble:  #0084ff;
+  --u-text:    #ffffff;
+  --a-bubble:  #e4e6eb;
+  --a-text:    #1a1a1a;
+  --header-bg: #ffffff;
+  --tab-bg:    #ffffff;
+  --tab-act:   #0084ff;
+  --inp-bg:    #f0f2f5;
+  --r:         18px;
+}
+[data-theme="dark"] {
+  --bg:        #18191a;
+  --surface:   #242526;
+  --text:      #e4e6eb;
+  --muted:     #b0b3b8;
+  --border:    #3a3b3c;
+  --accent:    #2d88ff;
+  --u-bubble:  #2d88ff;
+  --u-text:    #ffffff;
+  --a-bubble:  #3a3b3c;
+  --a-text:    #e4e6eb;
+  --header-bg: #242526;
+  --tab-bg:    #242526;
+  --tab-act:   #2d88ff;
+  --inp-bg:    #3a3b3c;
+}
+[data-theme="ocean"] {
+  --bg:        #0f1e26;
+  --surface:   #1B2B34;
+  --text:      #CDD3DE;
+  --muted:     #65737E;
+  --border:    #2d4454;
+  --accent:    #5FB3B3;
+  --u-bubble:  #5FB3B3;
+  --u-text:    #0f1e26;
+  --a-bubble:  #243646;
+  --a-text:    #CDD3DE;
+  --header-bg: #1B2B34;
+  --tab-bg:    #1B2B34;
+  --tab-act:   #5FB3B3;
+  --inp-bg:    #243646;
+}
+[data-theme="soft"] {
+  --bg:        #ede8e0;
+  --surface:   #faf7f2;
+  --text:      #2d2416;
+  --muted:     #8b7355;
+  --border:    #ddd5c8;
+  --accent:    #b45309;
+  --u-bubble:  #b45309;
+  --u-text:    #ffffff;
+  --a-bubble:  #e9e4db;
+  --a-text:    #2d2416;
+  --header-bg: #faf7f2;
+  --tab-bg:    #faf7f2;
+  --tab-act:   #b45309;
+  --inp-bg:    #ede8e0;
+}
+
+html, body { height: 100%; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; line-height: 1.5; background: var(--bg); color: var(--text); }
+
+.app { display: flex; flex-direction: column; height: 100vh; max-width: 680px; margin: 0 auto; background: var(--surface); box-shadow: 0 0 40px rgba(0,0,0,.15); }
+
+/* HEADER */
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; background: var(--header-bg);
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.hd-left { display: flex; align-items: center; gap: 10px; }
+.avatar {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--accent); display: flex; align-items: center;
+  justify-content: center; font-size: 18px; flex-shrink: 0;
+}
+.hd-info h2 { font-size: 14px; font-weight: 600; color: var(--text); }
+.hd-info p { font-size: 11px; color: var(--muted); }
+.hd-right { display: flex; gap: 6px; }
+.ico-btn {
+  width: 32px; height: 32px; border-radius: 50%; background: var(--inp-bg);
+  border: none; cursor: pointer; display: flex; align-items: center;
+  justify-content: center; font-size: 14px; color: var(--muted);
+  transition: background .15s;
+}
+.ico-btn:hover { background: var(--border); }
+
+/* THEME BAR */
+.theme-bar {
+  display: flex; gap: 6px; padding: 8px 16px;
+  background: var(--tab-bg); border-bottom: 1px solid var(--border);
+  flex-shrink: 0; align-items: center; flex-wrap: wrap;
+}
+.theme-bar span { font-size: 11px; color: var(--muted); margin-right: 2px; }
+.chip {
+  background: var(--inp-bg); border: 1.5px solid var(--border);
+  color: var(--muted); border-radius: 20px; padding: 3px 10px;
+  font-size: 11px; cursor: pointer; font-family: inherit; transition: all .15s;
+}
+.chip.on { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.chip:hover { border-color: var(--muted); }
+.sep { width: 1px; height: 16px; background: var(--border); }
+
+/* TABS */
+nav {
+  display: flex; background: var(--tab-bg);
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+  overflow-x: auto;
+}
+.tab {
+  flex: 1; text-align: center; padding: 10px 4px;
+  font-size: 12.5px; color: var(--muted); cursor: pointer;
+  border-bottom: 2px solid transparent; transition: all .15s;
+  white-space: nowrap; flex-shrink: 0; min-width: 60px;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--tab-act); border-bottom-color: var(--tab-act); font-weight: 600; }
+
+/* MESSAGES */
+.messages {
+  flex: 1; overflow-y: auto; padding: 16px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.msg-group { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+.msg-group.user { align-items: flex-end; }
+.msg-group.asst { align-items: flex-start; }
+
+.bubble-row { display: flex; align-items: flex-end; gap: 8px; }
+.msg-group.user .bubble-row { flex-direction: row-reverse; }
+
+.bv-avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; flex-shrink: 0;
+}
+.bv-avatar.bot { background: var(--accent); }
+.bv-avatar.usr { background: var(--inp-bg); }
+
+.bubble {
+  max-width: 72%; padding: 10px 14px; border-radius: 18px;
+  font-size: 14px; line-height: 1.5; word-break: break-word;
+}
+.msg-group.asst .bubble {
+  background: var(--a-bubble); color: var(--a-text);
+  border-bottom-left-radius: 4px;
+}
+.msg-group.user .bubble {
+  background: var(--u-bubble); color: var(--u-text);
+  border-bottom-right-radius: 4px;
+}
+.bubble code {
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 12.5px; opacity: 0.9;
+}
+.bubble pre {
+  background: rgba(0,0,0,.15); border-radius: 8px;
+  padding: 10px 12px; margin: 8px 0; font-size: 12.5px;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  overflow-x: auto; line-height: 1.5;
+}
+.msg-group.asst .bubble pre { background: rgba(0,0,0,.08); }
+.ts { font-size: 10px; color: var(--muted); padding: 0 4px; }
+
+.typing {
+  display: flex; gap: 4px; align-items: center; padding: 12px 16px;
+}
+.typing span {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--muted); animation: bounce .9s infinite;
+}
+.typing span:nth-child(2) { animation-delay: .15s; }
+.typing span:nth-child(3) { animation-delay: .3s; }
+@keyframes bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-5px)} }
+
+/* INPUT */
+.input-area {
+  padding: 10px 12px 14px; border-top: 1px solid var(--border);
+  background: var(--surface); flex-shrink: 0;
+}
+.model-row {
+  display: flex; justify-content: flex-end; margin-bottom: 8px;
+}
+.model-sel {
+  background: var(--inp-bg); border: 1px solid var(--border);
+  color: var(--muted); border-radius: 14px; padding: 3px 10px;
+  font-size: 11px; font-family: inherit; cursor: pointer; outline: none;
+}
+.input-row { display: flex; gap: 8px; align-items: flex-end; }
+.attach-btn {
+  width: 38px; height: 38px; border-radius: 50%; background: var(--inp-bg);
+  border: none; cursor: pointer; font-size: 18px; color: var(--muted);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+textarea {
+  flex: 1; background: var(--inp-bg); border: 1.5px solid transparent;
+  border-radius: 20px; color: var(--text); font-family: inherit;
+  font-size: 14px; padding: 9px 16px; resize: none; outline: none;
+  line-height: 1.5; min-height: 38px; max-height: 120px;
+  transition: border-color .15s;
+}
+textarea::placeholder { color: var(--muted); }
+textarea:focus { border-color: var(--accent); }
+.send {
+  width: 38px; height: 38px; border-radius: 50%;
+  background: var(--accent); color: var(--u-text); border: none;
+  cursor: pointer; font-size: 18px; display: flex; align-items: center;
+  justify-content: center; flex-shrink: 0; transition: opacity .15s;
+}
+.send:hover { opacity: 0.88; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="hd-left">
+      <div class="avatar">🤖</div>
+      <div class="hd-info">
+        <h2>vyrii</h2>
+        <p>qwen3:1.7b · online</p>
+      </div>
+    </div>
+    <div class="hd-right">
+      <button class="ico-btn" id="lang" onclick="toggleLang()" title="Language">🌐</button>
+      <button class="ico-btn" title="Settings">⚙️</button>
+    </div>
+  </header>
+
+  <div class="theme-bar">
+    <span>Theme:</span>
+    <button class="chip on"  onclick="theme('light',this)">Light</button>
+    <button class="chip"     onclick="theme('dark',this)">Dark</button>
+    <button class="chip"     onclick="theme('ocean',this)">Ocean</button>
+    <button class="chip"     onclick="theme('soft',this)">Soft</button>
+    <div class="sep"></div>
+    <button class="chip" id="langchip" onclick="toggleLang()">EN</button>
+  </div>
+
+  <nav>
+    <div class="tab active">💬 Chat</div>
+    <div class="tab">🔄 Translate</div>
+    <div class="tab">🌐 WebAsk</div>
+    <div class="tab">📁 Files</div>
+    <div class="tab">🔍 Scan</div>
+  </nav>
+
+  <div class="messages">
+    <!-- assistant -->
+    <div class="msg-group asst">
+      <div class="bubble-row">
+        <div class="bv-avatar bot">🤖</div>
+        <div class="bubble">
+          Hello! I'm running on <code>qwen3:1.7b</code> locally via Ollama. How can I help you today?
+        </div>
+      </div>
+      <span class="ts">14:23</span>
+    </div>
+
+    <!-- user -->
+    <div class="msg-group user">
+      <div class="bubble-row">
+        <div class="bubble">
+          Can you show me a simple Python function that reads a file and counts words?
+        </div>
+        <div class="bv-avatar usr">👤</div>
+      </div>
+      <span class="ts">14:23 ✓✓</span>
+    </div>
+
+    <!-- assistant with code -->
+    <div class="msg-group asst">
+      <div class="bubble-row">
+        <div class="bv-avatar bot">🤖</div>
+        <div class="bubble">
+          Sure! Here's a clean version:<br>
+          <pre>def count_words(filepath: str) -> int:
+    with open(filepath, encoding="utf-8") as f:
+        return len(f.read().split())</pre>
+          Usage: <code>count_words("notes.txt")</code>.<br>
+          For large files I can show a streaming version too.
+        </div>
+      </div>
+      <span class="ts">14:23</span>
+    </div>
+
+    <!-- typing indicator -->
+    <div class="msg-group asst">
+      <div class="bubble-row">
+        <div class="bv-avatar bot">🤖</div>
+        <div class="bubble" style="padding: 8px 14px;">
+          <div class="typing">
+            <span></span><span></span><span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="input-area">
+    <div class="model-row">
+      <select class="model-sel">
+        <option>qwen3:1.7b</option>
+        <option>gemma3:1b</option>
+        <option>llama3.2:3b</option>
+        <option>mistral:7b</option>
+      </select>
+    </div>
+    <div class="input-row">
+      <button class="attach-btn">📎</button>
+      <textarea rows="1" placeholder="Message…"></textarea>
+      <button class="send">▶</button>
+    </div>
+  </div>
+
+</div>
+<script>
+function theme(t, btn) {
+  document.documentElement.setAttribute('data-theme', t);
+  document.querySelectorAll('.chip').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+}
+function toggleLang() {
+  const b = document.getElementById('langchip');
+  b.textContent = b.textContent === 'EN' ? 'UK' : 'EN';
+}
+</script>
+</body>
+</html>

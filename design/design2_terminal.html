@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="ocean">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vyrii — Terminal</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:     #1B2B34;
+  --bg2:    #243646;
+  --text:   #CDD3DE;
+  --muted:  #65737E;
+  --border: #2d4454;
+  --accent: #5FB3B3;
+  --u-col:  #6699CC;
+  --a-col:  #5FB3B3;
+  --prompt: #5FB3B3;
+  --font:   'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
+}
+[data-theme="classic"] {
+  --bg:     #0d0d0d;
+  --bg2:    #1a1a1a;
+  --text:   #cccccc;
+  --muted:  #555555;
+  --border: #2a2a2a;
+  --accent: #00cc44;
+  --u-col:  #00cc44;
+  --a-col:  #00aaff;
+  --prompt: #00cc44;
+}
+[data-theme="amber"] {
+  --bg:     #1a1000;
+  --bg2:    #241800;
+  --text:   #ffcc66;
+  --muted:  #8a6e2a;
+  --border: #3a2800;
+  --accent: #ffaa00;
+  --u-col:  #ffaa00;
+  --a-col:  #ff8844;
+  --prompt: #ffaa00;
+}
+[data-theme="tty"] {
+  --bg:     #f0f0e8;
+  --bg2:    #e4e4dc;
+  --text:   #1a1a1a;
+  --muted:  #666655;
+  --border: #ccccbb;
+  --accent: #005577;
+  --u-col:  #005577;
+  --a-col:  #007744;
+  --prompt: #005577;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.app { display: flex; flex-direction: column; height: 100vh; }
+
+/* TITLE BAR */
+.titlebar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 18px; background: var(--bg2);
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+  user-select: none;
+}
+.tb-left { display: flex; align-items: center; gap: 10px; }
+.dots { display: flex; gap: 6px; }
+.dot { width: 12px; height: 12px; border-radius: 50%; }
+.dot.r { background: #ec5f67; }
+.dot.y { background: #fac863; }
+.dot.g { background: #99c794; }
+.tb-title { font-size: 12px; color: var(--muted); }
+.tb-right { display: flex; gap: 6px; align-items: center; }
+.tbtn {
+  background: none; border: 1px solid var(--border);
+  color: var(--muted); padding: 2px 8px;
+  font-size: 11px; font-family: var(--font);
+  cursor: pointer; transition: color .15s, border-color .15s;
+}
+.tbtn:hover, .tbtn.on { color: var(--accent); border-color: var(--accent); }
+
+/* TABS */
+nav {
+  display: flex; background: var(--bg);
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+  padding: 0 18px; gap: 0;
+}
+.tab {
+  padding: 8px 14px; font-size: 12px; color: var(--muted);
+  cursor: pointer; transition: color .15s; letter-spacing: 0.3px;
+  border-bottom: 1px solid transparent; margin-bottom: -1px;
+}
+.tab::before { content: '['; opacity: 0; transition: opacity .1s; }
+.tab::after  { content: ']'; opacity: 0; transition: opacity .1s; }
+.tab.active, .tab:hover {
+  color: var(--accent);
+}
+.tab.active::before, .tab.active::after { opacity: 1; }
+
+/* MESSAGES */
+.messages {
+  flex: 1; overflow-y: auto; padding: 16px 18px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.message { display: flex; flex-direction: column; gap: 4px; }
+.msg-header {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 11px; color: var(--muted);
+}
+.msg-header::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.role-badge { font-weight: 700; letter-spacing: 0.5px; }
+.role-badge.user { color: var(--u-col); }
+.role-badge.asst { color: var(--a-col); }
+.ts { color: var(--muted); font-size: 10px; }
+.msg-body { padding-left: 0; color: var(--text); }
+.msg-body code {
+  color: var(--accent); background: none; font-family: var(--font);
+}
+.msg-body pre {
+  background: var(--bg2); border: 1px solid var(--border);
+  padding: 10px 14px; margin: 6px 0;
+  font-size: 12.5px; line-height: 1.5; overflow-x: auto;
+}
+.cursor {
+  display: inline-block; width: 8px; height: 14px;
+  background: var(--accent); animation: blink .9s infinite;
+  vertical-align: middle; margin-left: 1px;
+}
+@keyframes blink { 0%,49%{opacity:1} 50%,100%{opacity:0} }
+
+/* INPUT */
+.input-area {
+  padding: 10px 18px 14px; border-top: 1px solid var(--border);
+  background: var(--bg); flex-shrink: 0;
+}
+.model-line {
+  font-size: 11px; color: var(--muted); margin-bottom: 6px;
+  display: flex; align-items: center; gap: 8px;
+}
+.model-line select {
+  background: none; border: none; color: var(--accent);
+  font-family: var(--font); font-size: 11px; cursor: pointer;
+  padding: 0; outline: none;
+}
+.input-row { display: flex; align-items: flex-end; gap: 0; }
+.prompt-prefix {
+  color: var(--prompt); padding: 8px 0; flex-shrink: 0;
+  font-weight: 700; font-size: 14px; margin-right: 8px;
+}
+textarea {
+  flex: 1; background: none; border: none; border-bottom: 1px solid var(--border);
+  color: var(--text); font-family: var(--font); font-size: 13.5px;
+  padding: 8px 0; resize: none; outline: none; line-height: 1.5;
+  min-height: 36px; max-height: 120px; transition: border-color .15s;
+}
+textarea::placeholder { color: var(--muted); }
+textarea:focus { border-bottom-color: var(--accent); }
+.send {
+  background: none; border: 1px solid var(--border);
+  color: var(--accent); font-family: var(--font); font-size: 12px;
+  padding: 6px 14px; cursor: pointer; margin-left: 10px;
+  flex-shrink: 0; transition: all .15s; height: 34px;
+}
+.send:hover { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="titlebar">
+    <div class="tb-left">
+      <div class="dots">
+        <div class="dot r"></div>
+        <div class="dot y"></div>
+        <div class="dot g"></div>
+      </div>
+      <span class="tb-title">vyrii@local — chat — qwen3:1.7b</span>
+    </div>
+    <div class="tb-right">
+      <button class="tbtn" onclick="pal('ocean',this)">Ocean</button>
+      <button class="tbtn on" onclick="pal('classic',this)">Classic</button>
+      <button class="tbtn" onclick="pal('amber',this)">Amber</button>
+      <button class="tbtn" onclick="pal('tty',this)">TTY</button>
+      <span style="width:1px;height:14px;background:var(--border);display:inline-block;margin:0 2px"></span>
+      <button class="tbtn" id="lang" onclick="toggleLang()">EN</button>
+    </div>
+  </div>
+
+  <nav>
+    <div class="tab active">chat</div>
+    <div class="tab">translate</div>
+    <div class="tab">webask</div>
+    <div class="tab">files</div>
+    <div class="tab">scan</div>
+  </nav>
+
+  <div class="messages">
+    <div class="message">
+      <div class="msg-header">
+        <span class="role-badge asst">assistant</span>
+        <span class="ts">14:23:01</span>
+      </div>
+      <div class="msg-body">
+        Hello! I'm running on <code>qwen3:1.7b</code> locally via Ollama.<br>
+        How can I help you today?
+      </div>
+    </div>
+
+    <div class="message">
+      <div class="msg-header">
+        <span class="role-badge user">you</span>
+        <span class="ts">14:23:15</span>
+      </div>
+      <div class="msg-body">
+        Can you show me a simple Python function that reads a file and counts words?
+      </div>
+    </div>
+
+    <div class="message">
+      <div class="msg-header">
+        <span class="role-badge asst">assistant</span>
+        <span class="ts">14:23:18</span>
+      </div>
+      <div class="msg-body">
+        Sure. Here's a clean version:
+        <pre>def count_words(filepath: str) -> int:
+    with open(filepath, encoding="utf-8") as f:
+        return len(f.read().split())</pre>
+        Usage: <code>count_words("notes.txt")</code><br>
+        For large files I can show a streaming version too.<span class="cursor"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="input-area">
+    <div class="model-line">
+      model:
+      <select>
+        <option>qwen3:1.7b</option>
+        <option>gemma3:1b</option>
+        <option>llama3.2:3b</option>
+        <option>mistral:7b</option>
+      </select>
+    </div>
+    <div class="input-row">
+      <span class="prompt-prefix">›</span>
+      <textarea rows="1" placeholder="type a message…"></textarea>
+      <button class="send">[enter]</button>
+    </div>
+  </div>
+
+</div>
+<script>
+function pal(t, btn) {
+  document.documentElement.setAttribute('data-theme', t);
+  document.querySelectorAll('.tbtn').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+}
+function toggleLang() {
+  const b = document.getElementById('lang');
+  b.textContent = b.textContent === 'EN' ? 'UK' : 'EN';
+}
+</script>
+</body>
+</html>
