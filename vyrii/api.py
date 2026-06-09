@@ -157,14 +157,44 @@ class HistAddMessageRequest(BaseModel):
     content: str
 
 class RagSearchRequest(BaseModel):
-    project: str
-    query:   str
-    top_k:   int = 3
+    project:      str
+    query:        str
+    top_k:        int = 3
+    mode:         str = "file"   # file | task | aggr | refine
+    sort:         str = "rank"   # rank | freq  (task mode only)
+    project_path: str = ""       # if set, use <project_path>/.simargl as store_dir
 
 class RagAskRequest(BaseModel):
     query:   str
     context: str
     model:   str = ""
+
+class ProjectRequest(BaseModel):
+    name:        str
+    path:        str
+    description: str = ""
+
+class RunRequest(BaseModel):
+    command: str
+    cwd:     str = ""
+    project: str = ""   # resolves cwd from projects.json if set
+
+class SchTaskRequest(BaseModel):
+    name:           str
+    command:        str
+    schedule_type:  str = "daily"
+    hour:           int = 9
+    minute:         int = 0
+    day_of_week:    str = "mon"
+    interval_value: int = 60
+
+class PromptItem(BaseModel):
+    id:          str = ""
+    name:        str
+    prompt:      str
+    description: str = ""
+    model:       str = ""
+    area:        str = ""
 
 
 def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
@@ -682,21 +712,54 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         project = req.project.strip()
         if not query or not project:
             return {"error": "project and query are required"}
+        mode = req.mode if req.mode in ("file", "task", "aggr", "refine") else "file"
+        sort = req.sort if req.sort in ("rank", "freq") else "rank"
+        if req.project_path.strip():
+            store_dir = str(_pl.Path(req.project_path.strip()) / ".simargl")
+        else:
+            store_dir = str(_VYRII_HOME / ".simargl")
         try:
             from simargl.searcher import search as _sim_search
             result = _sim_search(
-                query, mode="file", top_n=req.top_k,
+                query, mode=mode, sort=sort, top_n=req.top_k,
                 project_id=project,
-                store_dir=str(_VYRII_HOME / ".simargl"),
+                store_dir=store_dir,
             )
         except ImportError:
             return {"error": "simargl not installed — run: pip install simargl"}
         except Exception as e:
             return {"error": str(e)}
 
+        # Task mode — return units (historical tasks)
+        if mode == "task":
+            units = result.get("units", [])[:req.top_k]
+            return {
+                "mode": "task",
+                "results": [
+                    {
+                        "unit_id":      u.get("unit_id", ""),
+                        "text_preview": u.get("text_preview", ""),
+                        "score":        u.get("similarity", 0),
+                        "files":        u.get("files", []),
+                    }
+                    for u in units
+                ],
+                "context": "", "sources": [],
+            }
+
+        # Aggr mode — module-level results
+        if mode == "aggr":
+            modules = result.get("modules", [])[:req.top_k]
+            return {
+                "mode": "aggr",
+                "results": [{"path": m.get("module", ""), "score": m.get("score", 0)} for m in modules],
+                "context": "", "sources": [],
+            }
+
+        # File / refine mode
         files = result.get("files", [])[:req.top_k]
         if not files:
-            return {"results": [], "context": "", "sources": []}
+            return {"results": [], "context": "", "sources": [], "mode": mode}
 
         results, sources, ctx_parts = [], [], []
         for i, f in enumerate(files, 1):
@@ -984,6 +1047,183 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
             return {"ok": True, "message": "Windows shutdown in 10 s."}
         _sp.Popen(["systemctl", "poweroff"])
         return {"ok": True, "message": "System shutdown initiated."}
+
+    # ── /vyrii/projects — project registry ──────────────────────────────────
+    import pathlib as _proj_pl
+    _PROJECTS_FILE = _proj_pl.Path.home() / ".vyrii" / "projects.json"
+
+    def _load_projects() -> list:
+        try:
+            if _PROJECTS_FILE.exists():
+                return json.loads(_PROJECTS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+        return []
+
+    def _save_projects(projects: list):
+        _PROJECTS_FILE.parent.mkdir(exist_ok=True)
+        _PROJECTS_FILE.write_text(json.dumps(projects, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    def _resolve_project_cwd(project_name: str) -> str | None:
+        for p in _load_projects():
+            if p.get("name") == project_name:
+                return p.get("path", "")
+        return None
+
+    @app.get("/vyrii/projects")
+    def projects_list():
+        return {"projects": _load_projects()}
+
+    @app.post("/vyrii/projects")
+    def projects_add(req: ProjectRequest):
+        if not req.name.strip():
+            return {"error": "name is required"}
+        projects = _load_projects()
+        projects = [p for p in projects if p.get("name") != req.name]
+        projects.append({"name": req.name.strip(), "path": req.path.strip(), "description": req.description})
+        _save_projects(projects)
+        return {"ok": True, "projects": projects}
+
+    @app.delete("/vyrii/projects/{name}")
+    def projects_delete(name: str):
+        projects = [p for p in _load_projects() if p.get("name") != name]
+        _save_projects(projects)
+        return {"ok": True, "projects": projects}
+
+    # ── /vyrii/run — generic CLI runner ──────────────────────────────────────
+    @app.post("/vyrii/run")
+    def run_command(req: RunRequest):
+        import subprocess as _run_sp
+        import pathlib as _run_pl
+        import time as _run_time
+
+        cwd = req.cwd.strip() or None
+        if req.project.strip():
+            resolved = _resolve_project_cwd(req.project.strip())
+            if resolved is None:
+                return {"error": f"Project not found: {req.project}"}
+            cwd = resolved
+
+        if cwd and not _run_pl.Path(cwd).is_dir():
+            return {"error": f"Directory not found: {cwd}"}
+
+        t0 = _run_time.time()
+        try:
+            result = _run_sp.run(
+                req.command, shell=True, cwd=cwd or None,
+                capture_output=True, text=True, timeout=600,
+                encoding="utf-8", errors="replace",
+            )
+            duration = round(_run_time.time() - t0, 2)
+            return {
+                "stdout":      result.stdout,
+                "stderr":      result.stderr,
+                "returncode":  result.returncode,
+                "duration_s":  duration,
+                "cwd":         cwd or "",
+            }
+        except _run_sp.TimeoutExpired:
+            return {"error": "Command timed out (600s)", "stdout": "", "stderr": "", "returncode": -1}
+        except Exception as e:
+            return {"error": str(e), "stdout": "", "stderr": "", "returncode": -1}
+
+    # ── /vyrii/scheduler — REST wrapper around scheduler.py ──────────────────
+    from . import scheduler as _sch_api
+
+    @app.get("/vyrii/scheduler/tasks")
+    def sch_tasks_list():
+        return {"tasks": _sch_api.load_tasks()}
+
+    @app.post("/vyrii/scheduler/tasks")
+    def sch_tasks_create(req: SchTaskRequest):
+        if not req.name.strip() or not req.command.strip():
+            return {"error": "name and command are required"}
+        task = _sch_api.add_task(
+            name=req.name.strip(), command=req.command.strip(),
+            schedule_type=req.schedule_type, hour=req.hour,
+            minute=req.minute, day_of_week=req.day_of_week,
+            interval_value=req.interval_value,
+        )
+        return {"ok": True, "task": task}
+
+    @app.delete("/vyrii/scheduler/tasks/{task_id}")
+    def sch_tasks_delete(task_id: str):
+        _sch_api.remove_task(task_id)
+        return {"ok": True}
+
+    @app.post("/vyrii/scheduler/tasks/{task_id}/toggle")
+    def sch_tasks_toggle(task_id: str):
+        enabled = _sch_api.toggle_task(task_id)
+        return {"ok": True, "enabled": enabled}
+
+    @app.post("/vyrii/scheduler/tasks/{task_id}/run")
+    def sch_tasks_run_now(task_id: str):
+        _sch_api.run_now(task_id)
+        return {"ok": True}
+
+    @app.get("/vyrii/scheduler/tasks/{task_id}/logs")
+    def sch_task_logs(task_id: str):
+        import pathlib as _sch_pl
+        logs = _sch_api.get_task_logs(task_id)
+        return {"logs": [{"filename": f.name, "size": f.stat().st_size,
+                          "mtime": f.stat().st_mtime} for f in logs]}
+
+    @app.get("/vyrii/scheduler/log")
+    def sch_log_read(task_id: str = "", filename: str = ""):
+        if not filename.strip():
+            return {"error": "filename is required"}
+        import pathlib as _sch_pl2
+        log_dir = _sch_pl2.Path.home() / ".vyrii" / "scheduler_logs"
+        p = (log_dir / filename).resolve()
+        if not str(p).startswith(str(log_dir)):
+            return {"error": "path outside log dir"}
+        if not p.is_file():
+            return {"error": "log not found"}
+        content = p.read_text(encoding="utf-8", errors="replace")
+        return {"content": content, "filename": filename}
+
+    # ── /vyrii/prompts — prompt library ──────────────────────────────────
+    import pathlib as _prm_pl
+
+    def _prm_path() -> "_prm_pl.Path":
+        return _prm_pl.Path.home() / ".vyrii" / "prompts.json"
+
+    def _load_prompts() -> list[dict]:
+        p = _prm_path()
+        if not p.exists():
+            return []
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            return []
+
+    def _save_prompts(items: list[dict]) -> None:
+        _prm_path().parent.mkdir(parents=True, exist_ok=True)
+        _prm_path().write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    @app.get("/vyrii/prompts")
+    def prompts_list():
+        return {"prompts": _load_prompts()}
+
+    @app.post("/vyrii/prompts")
+    def prompts_save(req: PromptItem):
+        if not req.name.strip() or not req.prompt.strip():
+            return {"error": "name and prompt are required"}
+        items = _load_prompts()
+        pid = req.id.strip() or uuid.uuid4().hex[:12]
+        items = [p for p in items if p.get("id") != pid]
+        items.append({
+            "id": pid, "name": req.name.strip(), "prompt": req.prompt,
+            "description": req.description, "model": req.model.strip(), "area": req.area.strip(),
+        })
+        _save_prompts(items)
+        return {"ok": True, "id": pid}
+
+    @app.delete("/vyrii/prompts/{prompt_id}")
+    def prompts_delete(prompt_id: str):
+        items = [p for p in _load_prompts() if p.get("id") != prompt_id]
+        _save_prompts(items)
+        return {"ok": True}
 
     # ── static UI (served last so API routes take priority) ───────────────
     import os as _os

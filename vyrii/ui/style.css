@@ -554,6 +554,26 @@ select.form-control { cursor: pointer; }
 
 .btn-sm { padding: 5px 10px; font-size: 12px; height: 30px; }
 
+/* ── HELP BOX / FIELD HINT ────────────────────────────── */
+.help-box {
+  background: var(--surface);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+  line-height: 1.5;
+  white-space: pre-line;
+}
+.field-hint {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
 /* ── RESULT BOX ───────────────────────────────────────── */
 .result-box {
   background: var(--surface);

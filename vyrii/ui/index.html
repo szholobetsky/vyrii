@@ -72,9 +72,29 @@
         <span class="ni-icon">🖥️</span>
         <span class="ni-label" data-i18n="tab_profile">Profiles</span>
       </button>
+      <button class="nav-item" data-tab="scheduler">
+        <span class="ni-icon">🕐</span>
+        <span class="ni-label" data-i18n="tab_scheduler">Scheduler</span>
+      </button>
+      <button class="nav-item" data-tab="projects">
+        <span class="ni-icon">📦</span>
+        <span class="ni-label" data-i18n="tab_projects">Projects</span>
+      </button>
+      <button class="nav-item" data-tab="simargl">
+        <span class="ni-icon">🔎</span>
+        <span class="ni-label" data-i18n="tab_simargl">simargl</span>
+      </button>
+      <button class="nav-item" data-tab="svitovyd">
+        <span class="ni-icon">🗺️</span>
+        <span class="ni-label" data-i18n="tab_svitovyd">svitovyd</span>
+      </button>
       <button class="nav-item" data-tab="settings">
         <span class="ni-icon">⚙️</span>
         <span class="ni-label" data-i18n="tab_settings">Settings</span>
+      </button>
+      <button class="nav-item" data-tab="prompts">
+        <span class="ni-icon">📋</span>
+        <span class="ni-label" data-i18n="tab_prompts">Prompts</span>
       </button>
     </nav>
 
@@ -890,6 +910,544 @@
         <div class="result-box" id="team-result" style="flex:1">
           <span class="placeholder-text" data-i18n="result_here">Result will appear here…</span>
         </div>
+      </div>
+    </div>
+
+    <!-- ── SCHEDULER ── -->
+    <div class="tab-panel" id="tab-scheduler">
+      <div class="panel-header">
+        <h1 class="ph-title" data-i18n="tab_scheduler">Scheduler</h1>
+      </div>
+      <div class="panel-body">
+
+        <div class="form-group">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+            <label class="form-label" style="margin:0" data-i18n="sch_tasks">Tasks</label>
+            <button class="btn btn-ghost btn-sm" onclick="schRefresh()" data-i18n="refresh">Refresh</button>
+          </div>
+          <div id="sch-table" class="result-box" style="font-size:13px;min-height:80px"></div>
+        </div>
+
+        <details>
+          <summary style="cursor:pointer;padding:6px 0;font-size:13px;color:var(--text-muted)"
+                   data-i18n="sch_add_task">Add new task</summary>
+          <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+            <div class="form-row">
+              <div class="form-group flex-grow">
+                <label class="form-label" data-i18n="sch_name_label">Name</label>
+                <input id="sch-name" type="text" class="form-control" data-i18n-ph="sch_name_placeholder" placeholder="Morning crawl">
+              </div>
+              <div class="form-group" style="width:160px">
+                <label class="form-label" data-i18n="sch_stype_label">Schedule type</label>
+                <select id="sch-stype" class="form-control" onchange="schTypeChanged()">
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="interval_minutes">Every N min</option>
+                  <option value="interval_hours">Every N hours</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" data-i18n="sch_command_label">Command</label>
+              <input id="sch-command" type="text" class="form-control" data-i18n-ph="sch_command_placeholder" placeholder="simargl index files .">
+            </div>
+            <div class="form-row" id="sch-time-row">
+              <div class="form-group" style="width:120px">
+                <label class="form-label" data-i18n="sch_time_label">Time HH:MM</label>
+                <input id="sch-time" type="text" class="form-control" value="09:00" placeholder="09:00">
+              </div>
+              <div class="form-group" style="width:140px" id="sch-dow-wrap">
+                <label class="form-label" data-i18n="sch_dow_label">Day of week</label>
+                <select id="sch-dow" class="form-control">
+                  <option value="mon">Mon</option><option value="tue">Tue</option>
+                  <option value="wed">Wed</option><option value="thu">Thu</option>
+                  <option value="fri">Fri</option><option value="sat">Sat</option>
+                  <option value="sun">Sun</option>
+                </select>
+              </div>
+              <div class="form-group" style="width:120px" id="sch-interval-wrap" style="display:none">
+                <label class="form-label" data-i18n="sch_interval_label">Interval value</label>
+                <input id="sch-interval" type="number" class="form-control" value="60" min="1">
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" onclick="schCreate()" data-i18n="sch_create_btn">Create task</button>
+            </div>
+          </div>
+        </details>
+
+        <hr style="margin:16px 0;border-color:var(--border)">
+
+        <div class="form-group">
+          <label class="form-label" data-i18n="sch_task_id_label">Task ID (first 8 chars)</label>
+          <div class="form-row">
+            <input id="sch-task-id" type="text" class="form-control" placeholder="abcd1234" style="width:160px">
+            <button class="btn btn-ghost" onclick="schToggle()" data-i18n="sch_toggle_btn">Enable/Disable</button>
+            <button class="btn btn-ghost" onclick="schRunNow()" data-i18n="sch_run_now_btn">Run now</button>
+            <button class="btn btn-danger btn-sm" onclick="schDelete()" data-i18n="sch_delete_btn">Delete</button>
+          </div>
+        </div>
+
+        <details style="margin-top:8px">
+          <summary style="cursor:pointer;padding:6px 0;font-size:13px;color:var(--text-muted)"
+                   data-i18n="scheduler_logs_section">View task logs</summary>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+            <div class="form-row">
+              <input id="sch-log-id" type="text" class="form-control" placeholder="abcd1234" style="width:160px">
+              <button class="btn btn-ghost btn-sm" onclick="schLoadLogs()" data-i18n="sch_load_logs_btn">Load log list</button>
+            </div>
+            <select id="sch-log-sel" class="form-control" onchange="schReadLog(this.value)" size="4" style="height:auto"></select>
+            <div class="result-box file-raw" id="sch-log-content" style="max-height:300px;overflow:auto;font-size:12px"></div>
+          </div>
+        </details>
+
+      </div>
+    </div>
+
+    <!-- ── PROJECTS ── -->
+    <div class="tab-panel" id="tab-projects">
+      <div class="panel-header">
+        <h1 class="ph-title" data-i18n="tab_projects">Projects</h1>
+      </div>
+      <div class="panel-body">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px" data-i18n="projects_desc">
+          Project registry — name to local path. Used by simargl and svitovyd tabs.
+        </p>
+
+        <div id="proj-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px"></div>
+
+        <details>
+          <summary style="cursor:pointer;padding:6px 0;font-size:13px;color:var(--text-muted)"
+                   data-i18n="proj_add">Add project</summary>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+            <div class="form-row">
+              <div class="form-group" style="width:160px">
+                <label class="form-label" data-i18n="proj_name">Name</label>
+                <input id="proj-name" type="text" class="form-control" placeholder="kafka">
+              </div>
+              <div class="form-group flex-grow">
+                <label class="form-label" data-i18n="proj_path">Path</label>
+                <input id="proj-path" type="text" class="form-control" placeholder="/home/user/kafka">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" data-i18n="proj_desc_label">Description (optional)</label>
+              <input id="proj-desc" type="text" class="form-control" placeholder="">
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" onclick="projAdd()" data-i18n="proj_add_btn">Add</button>
+            </div>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <!-- ── SIMARGL ── -->
+    <div class="tab-panel" id="tab-simargl">
+      <div class="panel-header">
+        <h1 class="ph-title">simargl</h1>
+        <p class="ph-desc" data-i18n="simargl_desc">Task-to-code retrieval — index a project, then search by task description.</p>
+      </div>
+      <div class="panel-body">
+
+        <div class="help-box" data-i18n="sim_tab_help">You have a task. You do not know which files to edit. simargl reads git history and finds the most likely files.</div>
+
+        <div class="form-group">
+          <label class="form-label" data-i18n="proj_select">Project</label>
+          <div class="form-row">
+            <select id="sim-project" class="form-control flex-grow" onchange="simProjectChanged()">
+              <option value="">— select project —</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" onclick="loadProjectSelects()" data-i18n="refresh">Refresh</button>
+          </div>
+        </div>
+        <div id="sim-path-info" style="font-size:12px;color:var(--text-muted);margin-bottom:8px"></div>
+
+        <div class="subtabs" style="display:flex;gap:4px;margin-bottom:12px">
+          <button class="btn btn-ghost btn-sm subtab-active" id="sim-tab-index" onclick="simSubtab('index')">Index</button>
+          <button class="btn btn-ghost btn-sm" id="sim-tab-search" onclick="simSubtab('search')">Search</button>
+          <button class="btn btn-ghost btn-sm" id="sim-tab-rrf" onclick="simSubtab('rrf')">RRF</button>
+        </div>
+
+        <!-- Index sub-tab -->
+        <div id="sim-pane-index">
+          <div class="help-box" data-i18n="sim_index_help">Reads all git commits in this project. Builds a semantic index. Do this once before searching.</div>
+          <div class="form-actions">
+            <button class="btn btn-primary" onclick="simRunIndex()" data-i18n="sim_index_btn">Index</button>
+          </div>
+        </div>
+
+        <!-- Search sub-tab -->
+        <div id="sim-pane-search" style="display:none">
+          <div class="form-group">
+            <label class="form-label" data-i18n="sim_query">Task description</label>
+            <textarea id="sim-query" class="form-control" rows="3"
+              data-i18n-ph="sim_query_ph" placeholder="Fix memory leak in connection pool…"></textarea>
+            <small class="field-hint" data-i18n="sim_search_help">Write what you want to do — like a Jira task title. simargl finds the files most likely to change.</small>
+          </div>
+
+          <div class="form-row" style="align-items:flex-start;flex-wrap:wrap;gap:8px">
+            <div class="form-group" style="flex:1;min-width:110px">
+              <label class="form-label" data-i18n="sim_mode_label">Mode</label>
+              <select id="sim-mode" class="form-control" onchange="simModeChanged()">
+                <option value="file">file</option>
+                <option value="aggr">aggr</option>
+                <option value="task">task</option>
+                <option value="refine">refine</option>
+              </select>
+              <small class="field-hint" data-i18n="sim_mode_help">file — individual files. aggr — grouped by module. task — similar past tasks. refine — re-ranked files.</small>
+            </div>
+            <div class="form-group" style="flex:1;min-width:110px">
+              <label class="form-label" data-i18n="sim_format_label">Format</label>
+              <select id="sim-format" class="form-control">
+                <option value="text">text</option>
+                <option value="paths">paths</option>
+                <option value="modules">modules</option>
+                <option value="json">json</option>
+              </select>
+              <small class="field-hint" data-i18n="sim_format_help">text — readable. paths — file paths only. modules — module names only. json — raw JSON.</small>
+            </div>
+          </div>
+
+          <div class="form-row" style="align-items:flex-start;flex-wrap:wrap;gap:8px">
+            <div class="form-group" style="width:80px;flex-shrink:0">
+              <label class="form-label">--top-n</label>
+              <input id="sim-topn" type="number" class="form-control" value="10" min="1" max="100">
+              <small class="field-hint" data-i18n="sim_topn_help">Results to return.</small>
+            </div>
+            <div class="form-group" style="width:80px;flex-shrink:0" id="sim-topk-wrap">
+              <label class="form-label">--top-k</label>
+              <input id="sim-topk" type="number" class="form-control" value="10" min="1" max="100">
+              <small class="field-hint" data-i18n="sim_topk_help">Candidates per step.</small>
+            </div>
+            <div class="form-group" style="width:100px;flex-shrink:0" id="sim-sort-wrap">
+              <label class="form-label" data-i18n="sim_sort_label">Sort</label>
+              <select id="sim-sort" class="form-control">
+                <option value="rank">rank</option>
+                <option value="freq">freq</option>
+              </select>
+              <small class="field-hint" data-i18n="sim_sort_help">rank — by score. freq — by frequency (task only).</small>
+            </div>
+          </div>
+
+          <div class="form-row" style="gap:16px;flex-wrap:wrap;margin-bottom:10px">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+              <input id="sim-diff" type="checkbox">
+              <span>--diff</span>
+            </label>
+            <small class="field-hint" style="align-self:center" data-i18n="sim_diff_help">Include changed code in task results.</small>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+              <input id="sim-noblackholes" type="checkbox">
+              <span>--no-blackholes</span>
+            </label>
+            <small class="field-hint" style="align-self:center" data-i18n="sim_noblackholes_help">Exclude files that appear in almost every task.</small>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+              <input id="sim-stderr" type="checkbox">
+              <span>stderr</span>
+            </label>
+            <small class="field-hint" style="align-self:center" data-i18n="sim_stderr_help">Show stderr output. Off by default. Enable to debug errors.</small>
+          </div>
+
+          <div class="form-actions">
+            <button class="btn btn-primary" onclick="simRunSearch()" data-i18n="sim_search_btn">Search</button>
+          </div>
+        </div>
+
+        <!-- RRF sub-tab -->
+        <div id="sim-pane-rrf" style="display:none">
+          <div class="help-box" data-i18n="sim_rrf_help">Runs two or more searches and merges them by rank position. A file that appears in both task and file search ranks higher than a file in only one. Best result when you combine commit-history search with content search.</div>
+
+          <div class="form-group">
+            <label class="form-label" data-i18n="sim_query">Task description</label>
+            <textarea id="rrf-query" class="form-control" rows="3"
+              data-i18n-ph="sim_query_ph" placeholder="Fix memory leak in connection pool…"></textarea>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" data-i18n="sim_rrf_sources_label">Sources</label>
+            <input id="rrf-sources" type="text" class="form-control" value="task:default,file:default" placeholder="task:default,file:jina">
+            <small class="field-hint" data-i18n="sim_rrf_sources_help">Comma-separated mode:project pairs. Each pair runs an independent search. Files in multiple sources rank higher.</small>
+          </div>
+
+          <div class="form-row" style="align-items:flex-start;flex-wrap:wrap;gap:8px">
+            <div class="form-group" style="width:80px;flex-shrink:0">
+              <label class="form-label">--top-n</label>
+              <input id="rrf-topn" type="number" class="form-control" value="10" min="1" max="50">
+              <small class="field-hint" data-i18n="sim_topn_help">Results to return.</small>
+            </div>
+            <div class="form-group" style="width:80px;flex-shrink:0">
+              <label class="form-label">--top-k</label>
+              <input id="rrf-topk" type="number" class="form-control" value="10" min="1" max="100">
+              <small class="field-hint" data-i18n="sim_rrf_topk_help">Candidates per source before merge.</small>
+            </div>
+            <div class="form-group" style="width:80px;flex-shrink:0">
+              <label class="form-label">--k</label>
+              <input id="rrf-k" type="number" class="form-control" value="60" min="1" max="200">
+              <small class="field-hint" data-i18n="sim_rrf_k_help">Damping constant. Higher = smaller gap between ranks.</small>
+            </div>
+            <div class="form-group" style="flex:1;min-width:90px">
+              <label class="form-label" data-i18n="sim_sort_label">Sort</label>
+              <select id="rrf-sort" class="form-control">
+                <option value="freq">freq</option>
+                <option value="rank">rank</option>
+              </select>
+              <small class="field-hint" data-i18n="sim_sort_help">For task sources. freq — by frequency (recommended).</small>
+            </div>
+          </div>
+
+          <div class="form-row" style="align-items:flex-start;flex-wrap:wrap;gap:8px">
+            <div class="form-group" style="flex:1;min-width:120px">
+              <label class="form-label" data-i18n="sim_format_label">Format</label>
+              <select id="rrf-format" class="form-control">
+                <option value="text">text</option>
+                <option value="paths">paths</option>
+                <option value="json">json</option>
+              </select>
+            </div>
+            <div class="form-group" style="width:100px;flex-shrink:0">
+              <label class="form-label">--score-blend α</label>
+              <input id="rrf-blend" type="number" class="form-control" value="1.0" min="0" max="1" step="0.1">
+              <small class="field-hint" data-i18n="sim_blend_help">0.7 pushes down broad files (changelogs). 1.0 = off.</small>
+            </div>
+          </div>
+
+          <div class="form-row" style="gap:16px;flex-wrap:wrap;margin-bottom:10px">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+              <input id="rrf-stderr" type="checkbox">
+              <span>stderr</span>
+            </label>
+            <small class="field-hint" style="align-self:center" data-i18n="sim_stderr_help">Show stderr. Off by default.</small>
+          </div>
+
+          <div class="form-actions">
+            <button class="btn btn-primary" onclick="simRunRrf()" data-i18n="sim_rrf_btn">RRF Search</button>
+          </div>
+        </div>
+
+        <div class="result-box" id="sim-result" style="flex:1;margin-top:12px;min-height:320px;overflow-y:auto">
+          <span class="placeholder-text" data-i18n="result_here">Result will appear here…</span>
+        </div>
+        <div class="form-actions" style="margin-top:8px">
+          <button class="btn btn-ghost" onclick="addToChat('sim-result')" data-i18n="add_to_chat">Add to chat</button>
+          <button class="btn btn-ghost" onclick="copyResult('sim-result')" data-i18n="copy">Copy</button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── SVITOVYD ── -->
+    <div class="tab-panel" id="tab-svitovyd">
+      <div class="panel-header">
+        <h1 class="ph-title">svitovyd</h1>
+        <p class="ph-desc" data-i18n="svitovyd_desc">Project map — index code structure, then find/trace/deps/sym/keywords.</p>
+      </div>
+      <div class="panel-body">
+
+        <div class="help-box" data-i18n="svy_tab_help">Scan your code and build a map of all functions, classes, and their links. Then explore the structure.</div>
+
+        <div class="form-group">
+          <label class="form-label" data-i18n="proj_select">Project</label>
+          <div class="form-row">
+            <select id="svy-project" class="form-control flex-grow" onchange="svyProjectChanged()">
+              <option value="">— select project —</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" onclick="loadProjectSelects()" data-i18n="refresh">Refresh</button>
+          </div>
+        </div>
+        <div id="svy-path-info" style="font-size:12px;color:var(--text-muted);margin-bottom:8px"></div>
+
+        <div class="subtabs" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px">
+          <button class="btn btn-ghost btn-sm subtab-active" id="svy-tab-index" onclick="svySubtab('index')">Index</button>
+          <button class="btn btn-ghost btn-sm" id="svy-tab-find"  onclick="svySubtab('find')">Find</button>
+          <button class="btn btn-ghost btn-sm" id="svy-tab-trace" onclick="svySubtab('trace')">Trace ←</button>
+          <button class="btn btn-ghost btn-sm" id="svy-tab-deps"  onclick="svySubtab('deps')">Deps →</button>
+          <button class="btn btn-ghost btn-sm" id="svy-tab-sym"   onclick="svySubtab('sym')">Sym</button>
+          <button class="btn btn-ghost btn-sm" id="svy-tab-kw"    onclick="svySubtab('kw')">Keywords</button>
+          <button class="btn btn-ghost btn-sm" id="svy-tab-idiff" onclick="svySubtab('idiff')">Idiff</button>
+        </div>
+
+        <!-- Index -->
+        <div id="svy-pane-index">
+          <div class="help-box" data-i18n="svy_index_help">Scan the project folder. Find all function and class definitions. Save links between them. Result: .svitovyd/map.txt.</div>
+          <div class="form-group" style="width:200px">
+            <label class="form-label" data-i18n="svy_depth">Depth</label>
+            <select id="svy-depth" class="form-control">
+              <option value="2" selected>2 (defs+links)</option>
+              <option value="3">3 (+ vars/params)</option>
+            </select>
+            <small class="field-hint" data-i18n="svy_depth_help">2 — definitions and calls. 3 — also variables and parameters. Use 2 for most projects.</small>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" onclick="svyRun('index')" data-i18n="svy_index_btn">Index</button>
+          </div>
+        </div>
+
+        <!-- Find -->
+        <div id="svy-pane-find" style="display:none">
+          <div class="form-group">
+            <label class="form-label" data-i18n="svy_find_query">Query tokens</label>
+            <input id="svy-find-q" type="text" class="form-control" placeholder="auth !test">
+            <small class="field-hint" style="white-space:pre-line" data-i18n="svy_find_help">Filter the map by keyword.
+Examples:
+  auth — find blocks with "auth"
+  auth !test — find "auth", skip "test"
+  \insertUser — find exact identifier "insertUser"</small>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" onclick="svyRun('find')" data-i18n="svy_run_btn">Find</button>
+          </div>
+        </div>
+
+        <!-- Trace -->
+        <div id="svy-pane-trace" style="display:none">
+          <div class="help-box" data-i18n="svy_trace_help">Pick one function or class name. See who calls it. Useful when you want to know: what breaks if I change this?</div>
+          <div class="form-row">
+            <div class="form-group flex-grow">
+              <label class="form-label" data-i18n="svy_identifier">Identifier</label>
+              <input id="svy-trace-id" type="text" class="form-control" placeholder="insertEmail">
+            </div>
+            <div class="form-group" style="width:100px">
+              <label class="form-label" data-i18n="svy_depth_label">Depth</label>
+              <input id="svy-trace-depth" type="number" class="form-control" value="8" min="1" max="16">
+            </div>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" onclick="svyRun('trace')" data-i18n="svy_run_btn">Trace</button>
+          </div>
+        </div>
+
+        <!-- Deps -->
+        <div id="svy-pane-deps" style="display:none">
+          <div class="help-box" data-i18n="svy_deps_help">Pick one function or class name. See what it calls. Useful when you want to know: what does this depend on?</div>
+          <div class="form-row">
+            <div class="form-group flex-grow">
+              <label class="form-label" data-i18n="svy_identifier">Identifier or file</label>
+              <input id="svy-deps-id" type="text" class="form-control" placeholder="DatabaseManager">
+            </div>
+            <div class="form-group" style="width:100px">
+              <label class="form-label" data-i18n="svy_depth_label">Depth</label>
+              <input id="svy-deps-depth" type="number" class="form-control" value="8" min="1" max="16">
+            </div>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" onclick="svyRun('deps')" data-i18n="svy_run_btn">Deps</button>
+          </div>
+        </div>
+
+        <!-- Sym -->
+        <div id="svy-pane-sym" style="display:none">
+          <div class="help-box" data-i18n="svy_sym_help">Find functions that many others call, but which call very few. These are often good candidates for refactoring.</div>
+          <div class="form-group" style="width:100px">
+            <label class="form-label" data-i18n="svy_top_k">Top K hotspots</label>
+            <input id="svy-sym-k" type="number" class="form-control" value="5" min="1" max="20">
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" onclick="svyRun('sym')" data-i18n="svy_run_btn">Run</button>
+          </div>
+        </div>
+
+        <!-- Keywords -->
+        <div id="svy-pane-kw" style="display:none">
+          <div class="help-box" data-i18n="svy_kw_help">No task text — list the most used identifiers in this codebase. With task text — find identifiers related to that text.</div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="svy_kw_task">Task text (optional)</label>
+            <input id="svy-kw-task" type="text" class="form-control" placeholder="add author field to Book class">
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="width:100px">
+              <label class="form-label" data-i18n="svy_top_k">Top K</label>
+              <input id="svy-kw-k" type="number" class="form-control" value="50" min="10" max="200">
+            </div>
+            <div class="form-group" style="padding-top:22px">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input id="svy-kw-fuzzy" type="checkbox" checked>
+                <span data-i18n="svy_kw_fuzzy">Fuzzy</span>
+              </label>
+              <small class="field-hint" data-i18n="svy_kw_fuzzy_help">Split camelCase and snake_case. Finds more matches.</small>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" onclick="svyRun('kw')" data-i18n="svy_run_btn">Extract</button>
+          </div>
+        </div>
+
+        <!-- Idiff -->
+        <div id="svy-pane-idiff" style="display:none">
+          <div class="help-box" data-i18n="svy_idiff_help">Compare two map snapshots. Shows what functions and files changed. Useful after a big refactor.</div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="svy_idiff_prev">Previous map file path</label>
+            <input id="svy-idiff-prev" type="text" class="form-control" placeholder="/path/to/.svitovyd/map.prev.txt">
+            <small class="field-hint" data-i18n="svy_idiff_prev_help">Copy .svitovyd/map.txt to another name before a refactor, then compare after.</small>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" onclick="svyRun('idiff')" data-i18n="svy_run_btn">Diff</button>
+          </div>
+        </div>
+
+        <div id="svy-running" style="display:none;font-size:12px;color:var(--text-muted);margin-top:8px" data-i18n="loading">Loading…</div>
+        <div class="result-box file-raw" id="svy-result" style="flex:1;margin-top:12px;white-space:pre-wrap;min-height:320px;overflow-y:auto">
+          <span class="placeholder-text" data-i18n="result_here">Result will appear here…</span>
+        </div>
+        <div class="form-actions" style="margin-top:8px">
+          <button class="btn btn-ghost" onclick="addToChat('svy-result')" data-i18n="add_to_chat">Add to chat</button>
+          <button class="btn btn-ghost" onclick="copyResult('svy-result')" data-i18n="copy">Copy</button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── PROMPTS ── -->
+    <div class="tab-panel" id="tab-prompts">
+      <div class="panel-header">
+        <h1 class="ph-title" data-i18n="tab_prompts">Prompts</h1>
+        <p class="ph-desc" data-i18n="prompts_desc">Prompt library — save and search by name, model, or area.</p>
+      </div>
+      <div class="panel-body">
+
+        <div class="form-group" style="max-width:480px;margin-bottom:16px">
+          <input id="prm-filter" type="text" class="form-control"
+                 data-i18n-ph="prompts_filter_ph" placeholder="Filter by name, model, area…"
+                 oninput="prmFilter()">
+        </div>
+
+        <div id="prm-list" style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px"></div>
+
+        <details>
+          <summary style="cursor:pointer;padding:6px 0;font-size:13px;color:var(--text-muted)"
+                   data-i18n="prm_add">Add prompt</summary>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px;max-width:680px">
+            <div class="form-row">
+              <div class="form-group" style="width:180px">
+                <label class="form-label" data-i18n="prm_name">Name</label>
+                <input id="prm-name" type="text" class="form-control" placeholder="code-review-ruby">
+              </div>
+              <div class="form-group flex-grow">
+                <label class="form-label" data-i18n="prm_desc_label">Description</label>
+                <input id="prm-desc" type="text" class="form-control" placeholder="">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group" style="width:180px">
+                <label class="form-label" data-i18n="prm_model_label">Model</label>
+                <input id="prm-model" type="text" class="form-control" placeholder="qwen2.5-coder">
+              </div>
+              <div class="form-group" style="width:180px">
+                <label class="form-label" data-i18n="prm_area_label">Area</label>
+                <input id="prm-area" type="text" class="form-control" placeholder="code / research / …">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" data-i18n="prm_prompt_label">Prompt text</label>
+              <textarea id="prm-prompt" class="form-control" rows="5"
+                        style="font-family:monospace;resize:vertical" placeholder="You are…"></textarea>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" onclick="prmAdd()" data-i18n="prm_add_btn">Save</button>
+            </div>
+          </div>
+        </details>
+
       </div>
     </div>
 

@@ -3306,6 +3306,179 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     _sys_shutdown, inputs=[s_sys_confirm], outputs=[s_sys_status]
                 )
 
+            # Prompts
+            # ══════════════════════════════════════════════════════════════════
+            with gr.Tab(t["prompts_tab"]):
+                import json as _prm_json
+                import uuid as _prm_uuid
+
+                _PRM_PATH = VYRII_HOME / "prompts.json"
+
+                def _prm_load_all():
+                    if not _PRM_PATH.exists():
+                        return []
+                    try:
+                        return _prm_json.loads(_PRM_PATH.read_text(encoding="utf-8"))
+                    except Exception:
+                        return []
+
+                def _prm_save_all(items):
+                    _PRM_PATH.write_text(
+                        _prm_json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8"
+                    )
+
+                def _prm_as_md(items, q=""):
+                    q = q.lower()
+                    hits = [p for p in items if not q or any(
+                        q in (p.get(k) or "").lower()
+                        for k in ("name","description","model","area","prompt")
+                    )] if q else items
+                    if not hits:
+                        return t["prm_none"]
+                    lines = [t["prm_list_header"]]
+                    for p in hits:
+                        badges = ""
+                        if p.get("model"): badges += f" `{p['model']}`"
+                        if p.get("area"):  badges += f" _{p['area']}_"
+                        lines.append(f"\n**{p['name']}**{badges}")
+                        if p.get("description"):
+                            lines.append(f"_{p['description']}_")
+                        lines.append(f"```\n{p['prompt']}\n```")
+                    return "\n".join(lines)
+
+                def _prm_choices(items):
+                    return [f"{p['name']} [{p.get('model') or '—'}]" for p in items]
+
+                def _prm_refresh(q):
+                    items = _prm_load_all()
+                    choices = _prm_choices(items)
+                    return (
+                        _prm_as_md(items, q),
+                        gr.update(choices=choices, value=choices[0] if choices else None),
+                        items,
+                    )
+
+                def _prm_select_text(sel, items):
+                    if not sel or not items:
+                        return ""
+                    name = sel.split(" [")[0]
+                    for p in items:
+                        if p["name"] == name:
+                            return p["prompt"]
+                    return ""
+
+                def _prm_save(name, desc, model, area, prompt_text, q):
+                    if not name.strip() or not prompt_text.strip():
+                        return gr.update(), gr.update(), gr.update(), t["prm_err_required"]
+                    items = _prm_load_all()
+                    pid = next((p["id"] for p in items if p["name"] == name.strip()), None) \
+                          or _prm_uuid.uuid4().hex[:12]
+                    items = [p for p in items if p["name"] != name.strip()]
+                    items.append({
+                        "id": pid, "name": name.strip(), "prompt": prompt_text,
+                        "description": desc.strip(), "model": model.strip(), "area": area.strip(),
+                    })
+                    _prm_save_all(items)
+                    choices = _prm_choices(items)
+                    return (
+                        _prm_as_md(items, q),
+                        gr.update(choices=choices, value=choices[0] if choices else None),
+                        items,
+                        t["prm_saved"].format(name=name.strip()),
+                    )
+
+                def _prm_delete(sel, items, q):
+                    if not sel:
+                        return gr.update(), gr.update(), items, ""
+                    name = sel.split(" [")[0]
+                    new_items = [p for p in items if p["name"] != name]
+                    _prm_save_all(new_items)
+                    choices = _prm_choices(new_items)
+                    return (
+                        _prm_as_md(new_items, q),
+                        gr.update(choices=choices, value=choices[0] if choices else None),
+                        new_items,
+                        t["prm_deleted"].format(name=name),
+                    )
+
+                gr.Markdown(t["prompts_desc"])
+
+                _prm_init = _prm_load_all()
+                prm_state = gr.State(_prm_init)
+
+                with gr.Row():
+                    prm_filter = gr.Textbox(
+                        label=t["prm_filter_label"], placeholder="name / model / area…",
+                        scale=4,
+                    )
+                    prm_refresh_btn = gr.Button(t["prm_refresh_btn"], scale=1)
+
+                prm_list_md = gr.Markdown(_prm_as_md(_prm_init))
+
+                with gr.Row():
+                    prm_sel_dd = gr.Dropdown(
+                        choices=_prm_choices(_prm_init),
+                        value=_prm_choices(_prm_init)[0] if _prm_choices(_prm_init) else None,
+                        label=t["prm_select_label"],
+                        scale=4,
+                        allow_custom_value=False,
+                    )
+                    prm_add_to_chat_btn = gr.Button(t["add_to_chat_btn"], scale=1)
+                    prm_copy_btn        = gr.Button(t["copy_btn"],         scale=1)
+                    prm_del_btn         = gr.Button(t["prm_delete_btn"],   scale=1, variant="stop")
+
+                prm_text_hidden = gr.Textbox(visible=False, label="prm_text")
+                prm_status      = gr.Markdown("")
+                prm_filter_q    = gr.State("")
+
+                with gr.Accordion(t["prm_add_section"], open=False):
+                    prm_name   = gr.Textbox(label=t["prm_name_label"], placeholder="code-review-ruby")
+                    prm_desc   = gr.Textbox(label=t["prm_desc_label_g"], placeholder="")
+                    with gr.Row():
+                        prm_model = gr.Textbox(label=t["prm_model_label_g"], placeholder="qwen2.5-coder", scale=1)
+                        prm_area  = gr.Textbox(label=t["prm_area_label_g"],  placeholder="code / research / …", scale=1)
+                    prm_prompt_txt = gr.Textbox(
+                        label=t["prm_prompt_label_g"], lines=6, placeholder="You are…"
+                    )
+                    prm_save_btn = gr.Button(t["prm_save_btn"], variant="primary")
+
+                # ── wire up ──
+                prm_refresh_btn.click(
+                    _prm_refresh,
+                    inputs=[prm_filter],
+                    outputs=[prm_list_md, prm_sel_dd, prm_state],
+                )
+                prm_filter.submit(
+                    _prm_refresh,
+                    inputs=[prm_filter],
+                    outputs=[prm_list_md, prm_sel_dd, prm_state],
+                )
+                prm_sel_dd.change(
+                    _prm_select_text,
+                    inputs=[prm_sel_dd, prm_state],
+                    outputs=[prm_text_hidden],
+                )
+                prm_add_to_chat_btn.click(
+                    lambda text: (text, gr.update(visible=True)),
+                    inputs=[prm_text_hidden],
+                    outputs=[ctx_buffer, add_ctx_panel],
+                    js=_JS_SCROLL_TO_PANEL,
+                )
+                prm_copy_btn.click(
+                    None, inputs=[prm_text_hidden], outputs=[],
+                    js="async (text) => { await navigator.clipboard.writeText(text || ''); }",
+                )
+                prm_del_btn.click(
+                    _prm_delete,
+                    inputs=[prm_sel_dd, prm_state, prm_filter],
+                    outputs=[prm_list_md, prm_sel_dd, prm_state, prm_status],
+                )
+                prm_save_btn.click(
+                    _prm_save,
+                    inputs=[prm_name, prm_desc, prm_model, prm_area, prm_prompt_txt, prm_filter],
+                    outputs=[prm_list_md, prm_sel_dd, prm_state, prm_status],
+                )
+
         # ── "Add to chat" panel handlers (registered after all components) ──
         atc_cancel.click(lambda: gr.update(visible=False), outputs=[add_ctx_panel])
         atc_add.click(

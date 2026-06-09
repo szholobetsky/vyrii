@@ -133,6 +133,76 @@ const I18N = {
     team_profile: 'Profile', team_combine: 'Combine', team_ctx_mode: 'Context',
     team_query_ph: 'Question for all workers…', aspects: 'Aspects (one per worker)',
     run: 'Run', da_use_team: 'Team',
+    // Scheduler
+    tab_scheduler: 'Scheduler', sch_tasks: 'Tasks', sch_add_task: 'Add new task',
+    sch_name_label: 'Name', sch_command_label: 'Command', sch_stype_label: 'Schedule type',
+    sch_time_label: 'Time HH:MM', sch_dow_label: 'Day of week', sch_interval_label: 'Interval',
+    sch_create_btn: 'Create task', sch_toggle_btn: 'Enable/Disable', sch_run_now_btn: 'Run now',
+    sch_delete_btn: 'Delete', sch_task_id_label: 'Task ID (first 8 chars)',
+    sch_load_logs_btn: 'Load log list', scheduler_logs_section: 'View task logs',
+    sch_name_placeholder: 'Morning crawl', sch_command_placeholder: 'simargl index files .',
+    // Projects
+    tab_projects: 'Projects', projects_desc: 'Project registry — name to local path. Used by simargl and svitovyd tabs.',
+    proj_add: 'Add project', proj_name: 'Name', proj_path: 'Path',
+    proj_desc_label: 'Description (optional)', proj_add_btn: 'Add', proj_select: 'Project',
+    proj_delete_confirm: 'Delete project?',
+    // simargl
+    tab_simargl: 'simargl', simargl_desc: 'Task-to-code retrieval — index a project, then search by task description.',
+    sim_index_desc: 'Indexes the selected project with simargl. Creates a semantic index in ~/.vyrii/.simargl/<project>/.',
+    sim_store: 'Store dir', sim_index_btn: 'Index',
+    sim_query: 'Task description', sim_query_ph: 'Fix memory leak in connection pool…',
+    sim_top_k: 'Top K', sim_target: 'Target', sim_search_btn: 'Search',
+    // svitovyd
+    tab_svitovyd: 'svitovyd', svitovyd_desc: 'Project map — index code structure, then find/trace/deps/sym/keywords.',
+    svy_index_desc: 'Scans project directory and writes .svitovyd/map.txt.',
+    svy_depth: 'Depth', svy_index_btn: 'Index',
+    svy_find_query: 'Query tokens', svy_run_btn: 'Run',
+    svy_identifier: 'Identifier', svy_depth_label: 'Depth',
+    svy_top_k: 'Top K', svy_kw_task: 'Task text (optional — extract mode)', svy_kw_fuzzy: 'Fuzzy',
+    svy_idiff_prev: 'Previous map file path',
+    // run output
+    run_ok: 'Done (exit {code}, {dur}s)', run_error: 'Error (exit {code})',
+    // simargl help texts
+    sim_tab_help: 'You have a task. You do not know which files to edit. simargl reads git history and finds the most likely files.',
+    sim_index_help: 'Reads all git commits in this project. Builds a semantic index. Do this once before searching.',
+    sim_store_help: 'Folder where the index is saved. Use the default unless you have a reason to change it.',
+    sim_search_help: 'Write what you want to do — like a Jira task title. simargl finds the files most likely to change.',
+    sim_topn_help: 'Total results to return.',
+    sim_topk_help: 'Candidates per search step. Higher = slower but more accurate.',
+    sim_mode_label: 'Mode',
+    sim_mode_help: 'file — search by file content. aggr — group results by module (good for vague queries). task — find files via commit history (best for specific bugs). refine — auto-expand your query with project terms from commits, then search files (use when you don\'t know project vocabulary).',
+    sim_format_label: 'Format',
+    sim_format_help: 'text — readable output. paths — file paths only. modules — module names only. json — raw JSON.',
+    sim_sort_label: 'Sort', sim_sort_help: 'rank — by score. freq — by frequency (task only).',
+    sim_diff_help: 'Include changed code snippets in task results.',
+    sim_noblackholes_help: 'Exclude files that appear in almost every task (noise).',
+    sim_stderr_help: 'Show stderr in result. Off by default. Enable to debug errors.',
+    sim_rrf_btn: 'RRF Search',
+    sim_rrf_help: 'Runs two or more searches and merges by rank position. A file in both task and file search ranks higher than a file in only one. Best: combine task:default,file:jina.',
+    sim_rrf_sources_label: 'Sources',
+    sim_rrf_sources_help: 'Comma-separated mode:project pairs. Each pair is an independent search. Files in multiple sources rank higher.',
+    sim_rrf_topk_help: 'Candidates per source before merge.',
+    sim_rrf_k_help: 'Damping constant (default 60). Higher = smaller gap between ranks.',
+    sim_blend_help: '0.7 pushes down broad files (changelogs, relnotes). 1.0 = off.',
+    sim_target_help: 'File — individual files. aggr — folders/packages. Task — similar historical tasks with their changed files.',
+    // svitovyd help texts
+    svy_tab_help: 'Scan your code and build a map of all functions, classes, and their links. Then explore the structure.',
+    svy_index_help: 'Scan the project folder. Find all function and class definitions. Save links between them. Result: .svitovyd/map.txt.',
+    svy_depth_help: '2 — scan definitions and calls only. 3 — also scan variables and parameters. Use 2 for most projects.',
+    svy_find_help: 'Filter the map by keyword.\nExamples:\n  auth — find blocks with "auth"\n  auth !test — find "auth", skip "test"\n  \\insertUser — find exact identifier "insertUser"',
+    svy_trace_help: 'Pick one function or class name. See who calls it. Useful when you want to know: what breaks if I change this?',
+    svy_deps_help: 'Pick one function or class name. See what it calls. Useful when you want to know: what does this depend on?',
+    svy_sym_help: 'Find functions that many others call, but which call very few. These are often good candidates for refactoring.',
+    svy_kw_help: 'No task text — list the most used identifiers in this codebase. With task text — find identifiers related to that text.',
+    svy_kw_fuzzy_help: 'Split camelCase and snake_case. Finds more matches. Example: "user" matches "getUserById".',
+    svy_idiff_help: 'Compare two map snapshots. Shows what functions and files changed. Useful after a big refactor.',
+    svy_idiff_prev_help: 'Path to the old map file. Copy .svitovyd/map.txt to another name before a refactor, then compare after.',
+    // Prompts
+    tab_prompts: 'Prompts', prompts_desc: 'Prompt library — save and search by name, model, or area.',
+    prompts_filter_ph: 'Filter by name, model, area…',
+    prm_add: 'Add prompt', prm_name: 'Name', prm_desc_label: 'Description',
+    prm_model_label: 'Model', prm_area_label: 'Area', prm_prompt_label: 'Prompt text',
+    prm_add_btn: 'Save', prm_none: 'No prompts yet',
   },
   uk: {
     logo: 'В И Р І Й', tagline: 'локальні ШІ інструменти',
@@ -204,6 +274,69 @@ const I18N = {
     team_profile: 'Профіль', team_combine: 'Об\'єднання', team_ctx_mode: 'Контекст',
     team_query_ph: 'Питання для всіх воркерів…', aspects: 'Аспекти (один на воркер)',
     run: 'Запустити', da_use_team: 'Команда',
+    tab_scheduler: 'Планувальник', sch_tasks: 'Задачі', sch_add_task: 'Додати задачу',
+    sch_name_label: 'Назва', sch_command_label: 'Команда', sch_stype_label: 'Тип розкладу',
+    sch_time_label: 'Час ГГ:ХХ', sch_dow_label: 'День тижня', sch_interval_label: 'Інтервал',
+    sch_create_btn: 'Створити задачу', sch_toggle_btn: 'Увімк./Вимк.', sch_run_now_btn: 'Запустити зараз',
+    sch_delete_btn: 'Видалити', sch_task_id_label: 'ID задачі (перші 8 символів)',
+    sch_load_logs_btn: 'Список логів', scheduler_logs_section: 'Переглянути логи',
+    sch_name_placeholder: 'Ранковий обхід', sch_command_placeholder: 'simargl index files .',
+    tab_projects: 'Проекти', projects_desc: 'Реєстр проектів — назва до шляху. Використовується в simargl та svitovyd.',
+    proj_add: 'Додати проект', proj_name: 'Назва', proj_path: 'Шлях',
+    proj_desc_label: 'Опис (необов\'язково)', proj_add_btn: 'Додати', proj_select: 'Проект',
+    proj_delete_confirm: 'Видалити проект?',
+    tab_simargl: 'simargl', simargl_desc: 'Пошук коду за задачею — проіндексуйте проект і шукайте за описом задачі.',
+    sim_index_desc: 'Індексує проект через simargl. Створює семантичний індекс у ~/.vyrii/.simargl/<project>/.',
+    sim_store: 'Директорія зберігання', sim_index_btn: 'Індексувати',
+    sim_query: 'Опис задачі', sim_query_ph: 'Виправити витік пам\'яті в connection pool…',
+    sim_top_k: 'Top K', sim_target: 'Ціль', sim_search_btn: 'Знайти',
+    tab_svitovyd: 'svitovyd', svitovyd_desc: 'Карта проекту — проіндексуйте структуру коду, потім знаходьте/відстежуйте.',
+    svy_index_desc: 'Сканує директорію проекту і записує .svitovyd/map.txt.',
+    svy_depth: 'Глибина', svy_index_btn: 'Індексувати',
+    svy_find_query: 'Токени запиту', svy_run_btn: 'Запустити',
+    svy_identifier: 'Ідентифікатор', svy_depth_label: 'Глибина',
+    svy_top_k: 'Top K', svy_kw_task: 'Текст задачі (необов\'язково — режим витягу)', svy_kw_fuzzy: 'Нечіткий',
+    svy_idiff_prev: 'Шлях до попереднього map-файлу',
+    run_ok: 'Готово (код {code}, {dur}с)', run_error: 'Помилка (код {code})',
+    sim_tab_help: 'Є задача. Не знаєш які файли міняти. simargl читає git-історію і знаходить найімовірніші файли.',
+    sim_index_help: 'Читає всі git-коміти цього проекту. Будує семантичний індекс. Зроби це один раз перед пошуком.',
+    sim_store_help: 'Папка де зберігається індекс. Використовуй значення за замовчуванням якщо немає причини міняти.',
+    sim_search_help: 'Напиши що хочеш зробити — як назва Jira-задачі. simargl знайде найімовірніші файли для зміни.',
+    sim_topn_help: 'Скільки результатів повернути.',
+    sim_topk_help: 'Кандидатів на крок пошуку. Більше = точніше але повільніше.',
+    sim_mode_label: 'Режим',
+    sim_mode_help: 'file — пошук за вмістом файлів. aggr — групує по модулях (для розмитих запитів). task — знаходить файли через git-коміти (найкраще для конкретних багів). refine — автоматично розширює запит термінами з комітів, потім шукає файли (використовуй коли не знаєш словник проекту).',
+    sim_format_label: 'Формат',
+    sim_format_help: 'text — читабельний вивід. paths — тільки шляхи. modules — тільки модулі. json — сирий JSON.',
+    sim_sort_label: 'Сортування', sim_sort_help: 'rank — за оцінкою. freq — за частотою (тільки task).',
+    sim_diff_help: 'Включити фрагменти змін коду в результати задач.',
+    sim_noblackholes_help: 'Виключити файли що присутні майже в кожній задачі (шум).',
+    sim_stderr_help: 'Показати stderr у результаті. Вимкнено за замовчуванням. Увімкни для діагностики помилок.',
+    sim_rrf_btn: 'RRF Пошук',
+    sim_rrf_help: 'Запускає кілька пошуків і об\'єднує за позицією в рейтингу. Файл що є і в task і в file пошуку займає вище місце. Найкраще: task:default,file:jina.',
+    sim_rrf_sources_label: 'Джерела',
+    sim_rrf_sources_help: 'Пари mode:project через кому. Кожна пара — окремий пошук. Файли з кількох джерел займають вищі позиції.',
+    sim_rrf_topk_help: 'Кандидатів з кожного джерела перед злиттям.',
+    sim_rrf_k_help: 'Константа згасання (за замовчуванням 60). Більше = менший розрив між позиціями.',
+    sim_blend_help: '0.7 опускає широкі файли (changelog, relnotes). 1.0 = вимкнено.',
+    sim_target_help: 'file — окремі файли. aggr — папки/пакети. task — схожі задачі зі зміненими файлами.',
+    svy_tab_help: 'Сканує код і будує карту всіх функцій, класів та зв\'язків між ними. Потім дозволяє досліджувати структуру.',
+    svy_index_help: 'Сканує папку проекту. Знаходить всі визначення функцій і класів. Зберігає зв\'язки між ними. Результат: .svitovyd/map.txt.',
+    svy_depth_help: '2 — сканує визначення і виклики. 3 — також сканує змінні і параметри. Для більшості проектів вистачає 2.',
+    svy_find_help: 'Фільтрує карту за ключовим словом.\nПриклади:\n  auth — знайти блоки з "auth"\n  auth !test — знайти "auth", пропустити "test"\n  \\insertUser — знайти точний ідентифікатор "insertUser"',
+    svy_trace_help: 'Введи ім\'я функції або класу. Побачиш хто її викликає. Корисно коли хочеш знати: що зламається якщо я це зміню?',
+    svy_deps_help: 'Введи ім\'я функції або класу. Побачиш що вона викликає. Корисно коли хочеш знати: від чого це залежить?',
+    svy_sym_help: 'Знаходить функції які багато хто викликає, але які самі мало що викликають. Часто гарні кандидати для рефакторингу.',
+    svy_kw_help: 'Без тексту задачі — список найвживаніших ідентифікаторів у коді. З текстом задачі — знаходить ідентифікатори пов\'язані з цим текстом.',
+    svy_kw_fuzzy_help: 'Розбиває camelCase і snake_case. Знаходить більше збігів. Приклад: "user" знайде "getUserById".',
+    svy_idiff_help: 'Порівнює два знімки карти. Показує що змінилось у функціях і файлах. Корисно після великого рефакторингу.',
+    svy_idiff_prev_help: 'Шлях до старого файлу карти. Скопіюй .svitovyd/map.txt під іншою назвою перед рефакторингом, потім порівняй після.',
+    // Prompts
+    tab_prompts: 'Промпти', prompts_desc: 'Бібліотека промптів — збережи і знайди за назвою, моделлю або темою.',
+    prompts_filter_ph: 'Пошук за назвою, моделлю, темою…',
+    prm_add: 'Додати промпт', prm_name: 'Назва', prm_desc_label: 'Опис',
+    prm_model_label: 'Модель', prm_area_label: 'Тема', prm_prompt_label: 'Текст промпту',
+    prm_add_btn: 'Зберегти', prm_none: 'Промптів ще немає',
   },
   de: {
     logo: 'V Y R I I', tagline: 'lokale KI-Werkzeuge',
@@ -272,6 +405,73 @@ const I18N = {
     team_profile: 'Profil', team_combine: 'Kombinieren', team_ctx_mode: 'Kontext',
     team_query_ph: 'Frage an alle Worker…', aspects: 'Aspekte (einer pro Worker)',
     run: 'Ausführen', da_use_team: 'Team',
+    tab_scheduler: 'Planer', tab_projects: 'Projekte', tab_simargl: 'simargl', tab_svitovyd: 'svitovyd',
+    proj_select: 'Projekt', proj_add: 'Projekt hinzufügen', proj_name: 'Name', proj_path: 'Pfad',
+    proj_add_btn: 'Hinzufügen', sim_index_btn: 'Indexieren', sim_search_btn: 'Suchen',
+    svy_index_btn: 'Indexieren', svy_run_btn: 'Ausführen', sch_create_btn: 'Aufgabe erstellen',
+    sch_toggle_btn: 'Aktivieren/Deaktivieren', sch_run_now_btn: 'Jetzt ausführen', sch_delete_btn: 'Löschen',
+    run_ok: 'Fertig (Code {code}, {dur}s)', run_error: 'Fehler (Code {code})',
+    sim_tab_help: 'Du hast eine Aufgabe. Du weißt nicht, welche Dateien du ändern musst. simargl liest die Git-Historie und findet die wahrscheinlichsten Dateien.',
+    sim_index_help: 'Liest alle Git-Commits in diesem Projekt. Baut einen semantischen Index. Einmal machen, bevor du suchst.',
+    sim_store_help: 'Ordner, in dem der Index gespeichert wird. Benutze den Standard, außer du hast einen Grund ihn zu ändern.',
+    sim_search_help: 'Schreib, was du tun möchtest — wie ein Jira-Titel. simargl findet die Dateien, die sich am wahrscheinlichsten ändern.',
+    sim_topk_help: 'Wie viele Ergebnisse anzeigen.',
+    sim_mode_label: 'Modus', sim_mode_help: 'file — nach Dateiinhalt suchen. aggr — nach Modul gruppiert (für vage Anfragen). task — Dateien via Git-Commits (am besten für konkrete Bugs). refine — Query automatisch mit Projektbegriffen aus Commits erweitern (wenn Projektvokabular unbekannt).',
+    sim_sort_label: 'Sortierung', sim_sort_help: 'rank — nach Score. freq — nach Häufigkeit (nur task).',
+    sim_target_help: 'file — Dateien. aggr — Ordner/Pakete. task — ähnliche Aufgaben mit geänderten Dateien.',
+    svy_tab_help: 'Scannt den Code und erstellt eine Karte aller Funktionen, Klassen und ihrer Verbindungen.',
+    svy_index_help: 'Scannt den Projektordner. Findet alle Funktions- und Klassendefinitionen. Speichert Verbindungen. Ergebnis: .svitovyd/map.txt.',
+    svy_depth_help: '2 — scannt Definitionen und Aufrufe. 3 — auch Variablen und Parameter. Für die meisten Projekte reicht 2.',
+    svy_find_help: 'Filtert die Karte nach Schlüsselwort.\nBeispiele:\n  auth — findet Blöcke mit "auth"\n  auth !test — findet "auth", überspringt "test"\n  \\insertUser — findet genau "insertUser"',
+    svy_trace_help: 'Gib einen Funktions- oder Klassenname ein. Sieh, wer ihn aufruft. Nützlich wenn du wissen willst: was bricht, wenn ich das ändere?',
+    svy_deps_help: 'Gib einen Funktions- oder Klassenname ein. Sieh, was er aufruft. Nützlich wenn du wissen willst: wovon hängt das ab?',
+    svy_sym_help: 'Findet Funktionen, die viele aufrufen, aber selbst wenig aufrufen. Oft gute Kandidaten für Refactoring.',
+    svy_kw_help: 'Ohne Text — Liste der meistgenutzten Bezeichner im Code. Mit Text — findet Bezeichner zu diesem Text.',
+    svy_kw_fuzzy_help: 'Trennt camelCase und snake_case. Findet mehr Treffer. Beispiel: "user" findet "getUserById".',
+    svy_idiff_help: 'Vergleicht zwei Karten-Snapshots. Zeigt was sich geändert hat. Nützlich nach einem großen Refactoring.',
+    svy_idiff_prev_help: 'Pfad zur alten Kartendatei. Kopiere .svitovyd/map.txt vor dem Refactoring, dann vergleiche danach.',
+    // scheduler labels
+    sch_tasks: 'Aufgaben', sch_add_task: 'Neue Aufgabe',
+    sch_name_label: 'Name', sch_command_label: 'Befehl', sch_stype_label: 'Plantyp',
+    sch_time_label: 'Zeit HH:MM', sch_dow_label: 'Wochentag', sch_interval_label: 'Intervall',
+    sch_task_id_label: 'Aufgaben-ID (erste 8 Zeichen)',
+    sch_load_logs_btn: 'Protokolle laden', scheduler_logs_section: 'Protokolle anzeigen',
+    sch_name_placeholder: 'Morgendlicher Crawl', sch_command_placeholder: 'simargl index files .',
+    // project labels
+    projects_desc: 'Projektregister — Name zu lokalem Pfad. Verwendet von simargl und svitovyd.',
+    proj_desc_label: 'Beschreibung (optional)', proj_delete_confirm: 'Projekt löschen?',
+    // simargl labels
+    simargl_desc: 'Code-Suche nach Aufgabe — Projekt indexieren, dann nach Aufgabenbeschreibung suchen.',
+    sim_index_desc: 'Indexiert das Projekt mit simargl. Erstellt einen semantischen Index in ~/.vyrii/.simargl/<project>/.',
+    sim_store: 'Speicherordner', sim_query: 'Aufgabenbeschreibung',
+    sim_query_ph: 'Speicherleck im Connection Pool beheben…',
+    sim_top_k: 'Top K', sim_target: 'Ziel',
+    // svitovyd labels
+    svitovyd_desc: 'Projektkarte — Code-Struktur indexieren, dann suchen/verfolgen/abhängigkeiten.',
+    svy_index_desc: 'Scannt das Projektverzeichnis und schreibt .svitovyd/map.txt.',
+    svy_depth: 'Tiefe', svy_find_query: 'Suchbegriffe',
+    svy_identifier: 'Bezeichner', svy_depth_label: 'Tiefe',
+    svy_top_k: 'Top K', svy_kw_task: 'Aufgabentext (optional — Extraktion)',
+    svy_kw_fuzzy: 'Fuzzy', svy_idiff_prev: 'Pfad zur alten Kartendatei',
+    // new search params
+    sim_topn_help: 'Gesamtzahl der zurückzugebenden Ergebnisse.',
+    sim_format_label: 'Format',
+    sim_format_help: 'text — lesbar. paths — nur Dateipfade. modules — nur Modulnamen. json — roher JSON.',
+    sim_diff_help: 'Geänderte Code-Ausschnitte in Ergebnissen einbeziehen.',
+    sim_noblackholes_help: 'Dateien ausschließen, die in fast jeder Aufgabe erscheinen (Rauschen).',
+    sim_stderr_help: 'Stderr anzeigen. Standardmäßig aus. Aktivieren um Fehler zu debuggen.',
+    sim_rrf_btn: 'RRF-Suche', sim_rrf_sources_label: 'Quellen',
+    sim_rrf_sources_help: 'Kommagetrennte mode:projekt Paare. Dateien in mehreren Quellen erhalten höhere Ränge.',
+    sim_rrf_topk_help: 'Kandidaten pro Quelle vor dem Merge.',
+    sim_rrf_k_help: 'Dämpfungskonstante (Standard 60).',
+    sim_blend_help: '0.7 drückt breite Dateien (Changelog) nach unten. 1.0 = aus.',
+    sim_rrf_help: 'Führt mehrere Suchen durch und fasst sie nach Rang zusammen. Dateien in task und file gleichzeitig erreichen höhere Positionen.',
+    // Prompts
+    tab_prompts: 'Prompts', prompts_desc: 'Prompt-Bibliothek — speichern und nach Name, Modell oder Bereich suchen.',
+    prompts_filter_ph: 'Nach Name, Modell, Bereich filtern…',
+    prm_add: 'Prompt hinzufügen', prm_name: 'Name', prm_desc_label: 'Beschreibung',
+    prm_model_label: 'Modell', prm_area_label: 'Bereich', prm_prompt_label: 'Prompt-Text',
+    prm_add_btn: 'Speichern', prm_none: 'Noch keine Prompts',
   },
   fr: {
     logo: 'V Y R I I', tagline: 'outils IA locaux',
@@ -340,6 +540,68 @@ const I18N = {
     team_profile: 'Profil', team_combine: 'Combiner', team_ctx_mode: 'Contexte',
     team_query_ph: 'Question pour tous les workers…', aspects: 'Aspects (un par worker)',
     run: 'Exécuter', da_use_team: 'Équipe',
+    tab_scheduler: 'Planificateur', tab_projects: 'Projets', tab_simargl: 'simargl', tab_svitovyd: 'svitovyd',
+    proj_select: 'Projet', proj_add: 'Ajouter un projet', proj_name: 'Nom', proj_path: 'Chemin',
+    proj_add_btn: 'Ajouter', sim_index_btn: 'Indexer', sim_search_btn: 'Rechercher',
+    svy_index_btn: 'Indexer', svy_run_btn: 'Exécuter', sch_create_btn: 'Créer la tâche',
+    sch_toggle_btn: 'Activer/Désactiver', sch_run_now_btn: 'Exécuter maintenant', sch_delete_btn: 'Supprimer',
+    run_ok: 'Terminé (code {code}, {dur}s)', run_error: 'Erreur (code {code})',
+    sim_tab_help: 'Tu as une tâche. Tu ne sais pas quels fichiers modifier. simargl lit l\'historique git et trouve les fichiers les plus probables.',
+    sim_index_help: 'Lit tous les commits git de ce projet. Construit un index sémantique. À faire une fois avant de chercher.',
+    sim_store_help: 'Dossier où l\'index est sauvegardé. Garde la valeur par défaut sauf si tu as une raison de changer.',
+    sim_search_help: 'Écris ce que tu veux faire — comme un titre Jira. simargl trouve les fichiers les plus susceptibles de changer.',
+    sim_topk_help: 'Combien de résultats afficher.',
+    sim_mode_label: 'Mode', sim_mode_help: 'file — recherche par contenu. aggr — groupé par module (pour requêtes vagues). task — fichiers via commits git (meilleur pour bugs précis). refine — enrichit la requête avec les termes du projet depuis les commits (quand le vocabulaire est inconnu).',
+    sim_sort_label: 'Tri', sim_sort_help: 'rank — par score. freq — par fréquence (task seulement).',
+    sim_target_help: 'file — fichiers. aggr — dossiers/packages. task — tâches similaires avec fichiers modifiés.',
+    svy_tab_help: 'Scanne le code et construit une carte de toutes les fonctions, classes et leurs liens.',
+    svy_index_help: 'Scanne le dossier du projet. Trouve toutes les définitions de fonctions et classes. Sauvegarde les liens. Résultat: .svitovyd/map.txt.',
+    svy_depth_help: '2 — scanne les définitions et appels. 3 — aussi les variables et paramètres. Pour la plupart des projets, 2 suffit.',
+    svy_find_help: 'Filtre la carte par mot-clé.\nExemples:\n  auth — trouve les blocs avec "auth"\n  auth !test — trouve "auth", ignore "test"\n  \\insertUser — trouve exactement "insertUser"',
+    svy_trace_help: 'Entre un nom de fonction ou de classe. Vois qui l\'appelle. Utile quand tu veux savoir: qu\'est-ce qui casse si je change ça?',
+    svy_deps_help: 'Entre un nom de fonction ou de classe. Vois ce qu\'elle appelle. Utile quand tu veux savoir: de quoi ça dépend?',
+    svy_sym_help: 'Trouve les fonctions que beaucoup appellent, mais qui appellent peu. Souvent bons candidats pour le refactoring.',
+    svy_kw_help: 'Sans texte — liste les identifiants les plus utilisés. Avec texte — trouve les identifiants liés à ce texte.',
+    svy_kw_fuzzy_help: 'Sépare camelCase et snake_case. Trouve plus de correspondances. Exemple: "user" trouve "getUserById".',
+    svy_idiff_help: 'Compare deux instantanés de carte. Montre ce qui a changé. Utile après un grand refactoring.',
+    svy_idiff_prev_help: 'Chemin vers l\'ancien fichier de carte. Copie .svitovyd/map.txt avant le refactoring, puis compare après.',
+    sch_tasks: 'Tâches', sch_add_task: 'Nouvelle tâche',
+    sch_name_label: 'Nom', sch_command_label: 'Commande', sch_stype_label: 'Type',
+    sch_time_label: 'Heure HH:MM', sch_dow_label: 'Jour', sch_interval_label: 'Intervalle',
+    sch_task_id_label: 'ID tâche (8 premiers car.)',
+    sch_load_logs_btn: 'Charger les logs', scheduler_logs_section: 'Voir les logs',
+    sch_name_placeholder: 'Crawl matinal', sch_command_placeholder: 'simargl index files .',
+    projects_desc: 'Registre de projets — nom vers chemin local. Utilisé par simargl et svitovyd.',
+    proj_desc_label: 'Description (optionnelle)', proj_delete_confirm: 'Supprimer le projet ?',
+    simargl_desc: 'Recherche code par tâche — indexer un projet, puis chercher par description.',
+    sim_index_desc: 'Indexe le projet avec simargl. Crée un index sémantique dans ~/.vyrii/.simargl/<project>/.',
+    sim_store: 'Dossier', sim_query: 'Description de tâche',
+    sim_query_ph: 'Corriger fuite mémoire dans le pool de connexions…',
+    sim_top_k: 'Top K', sim_target: 'Cible',
+    svitovyd_desc: 'Carte du projet — indexer la structure, puis trouver/tracer/dépendances.',
+    svy_index_desc: 'Scanne le répertoire et écrit .svitovyd/map.txt.',
+    svy_depth: 'Profondeur', svy_find_query: 'Termes de recherche',
+    svy_identifier: 'Identifiant', svy_depth_label: 'Profondeur',
+    svy_top_k: 'Top K', svy_kw_task: 'Texte de tâche (optionnel — extraction)',
+    svy_kw_fuzzy: 'Fuzzy', svy_idiff_prev: 'Chemin ancien fichier carte',
+    sim_topn_help: 'Nombre total de résultats à retourner.',
+    sim_format_label: 'Format',
+    sim_format_help: 'text — lisible. paths — chemins seulement. modules — noms de modules. json — JSON brut.',
+    sim_diff_help: 'Inclure les extraits de code modifiés dans les résultats.',
+    sim_noblackholes_help: 'Exclure les fichiers présents dans presque chaque tâche (bruit).',
+    sim_stderr_help: 'Afficher stderr dans le résultat. Désactivé par défaut. Activer pour déboguer.',
+    sim_rrf_btn: 'Recherche RRF', sim_rrf_sources_label: 'Sources',
+    sim_rrf_sources_help: 'Paires mode:projet séparées par virgule. Les fichiers dans plusieurs sources montent dans le classement.',
+    sim_rrf_topk_help: 'Candidats par source avant la fusion.',
+    sim_rrf_k_help: 'Constante d\'amortissement (défaut 60).',
+    sim_blend_help: '0.7 abaisse les fichiers larges (changelog). 1.0 = désactivé.',
+    sim_rrf_help: 'Lance plusieurs recherches et fusionne par position. Un fichier présent dans task et file monte automatiquement.',
+    // Prompts
+    tab_prompts: 'Prompts', prompts_desc: 'Bibliothèque de prompts — sauvegarder et rechercher par nom, modèle ou domaine.',
+    prompts_filter_ph: 'Filtrer par nom, modèle, domaine…',
+    prm_add: 'Ajouter un prompt', prm_name: 'Nom', prm_desc_label: 'Description',
+    prm_model_label: 'Modèle', prm_area_label: 'Domaine', prm_prompt_label: 'Texte du prompt',
+    prm_add_btn: 'Enregistrer', prm_none: 'Aucun prompt encore',
   },
   es: {
     logo: 'V Y R I I', tagline: 'herramientas IA locales',
@@ -408,6 +670,68 @@ const I18N = {
     team_profile: 'Perfil', team_combine: 'Combinar', team_ctx_mode: 'Contexto',
     team_query_ph: 'Pregunta para todos los workers…', aspects: 'Aspectos (uno por worker)',
     run: 'Ejecutar', da_use_team: 'Equipo',
+    tab_scheduler: 'Planificador', tab_projects: 'Proyectos', tab_simargl: 'simargl', tab_svitovyd: 'svitovyd',
+    proj_select: 'Proyecto', proj_add: 'Añadir proyecto', proj_name: 'Nombre', proj_path: 'Ruta',
+    proj_add_btn: 'Añadir', sim_index_btn: 'Indexar', sim_search_btn: 'Buscar',
+    svy_index_btn: 'Indexar', svy_run_btn: 'Ejecutar', sch_create_btn: 'Crear tarea',
+    sch_toggle_btn: 'Activar/Desactivar', sch_run_now_btn: 'Ejecutar ahora', sch_delete_btn: 'Eliminar',
+    run_ok: 'Listo (código {code}, {dur}s)', run_error: 'Error (código {code})',
+    sim_tab_help: 'Tienes una tarea. No sabes qué archivos cambiar. simargl lee el historial git y encuentra los archivos más probables.',
+    sim_index_help: 'Lee todos los commits git de este proyecto. Crea un índice semántico. Hazlo una vez antes de buscar.',
+    sim_store_help: 'Carpeta donde se guarda el índice. Usa el valor por defecto a menos que tengas una razón para cambiarlo.',
+    sim_search_help: 'Escribe lo que quieres hacer — como un título de Jira. simargl encuentra los archivos con más probabilidad de cambiar.',
+    sim_topk_help: 'Cuántos resultados mostrar.',
+    sim_mode_label: 'Modo', sim_mode_help: 'file — busca por contenido. aggr — agrupado por módulo (para consultas vagas). task — archivos via commits git (mejor para bugs específicos). refine — amplía la consulta con términos del proyecto de los commits (cuando no conoces el vocabulario).',
+    sim_sort_label: 'Orden', sim_sort_help: 'rank — por puntuación. freq — por frecuencia (solo task).',
+    sim_target_help: 'file — archivos. aggr — carpetas/paquetes. task — tareas similares con archivos cambiados.',
+    svy_tab_help: 'Escanea el código y crea un mapa de todas las funciones, clases y sus vínculos.',
+    svy_index_help: 'Escanea la carpeta del proyecto. Encuentra todas las definiciones de funciones y clases. Guarda los vínculos. Resultado: .svitovyd/map.txt.',
+    svy_depth_help: '2 — escanea definiciones y llamadas. 3 — también variables y parámetros. Para la mayoría de proyectos, 2 es suficiente.',
+    svy_find_help: 'Filtra el mapa por palabra clave.\nEjemplos:\n  auth — encuentra bloques con "auth"\n  auth !test — encuentra "auth", omite "test"\n  \\insertUser — encuentra exactamente "insertUser"',
+    svy_trace_help: 'Escribe un nombre de función o clase. Ve quién la llama. Útil cuando quieres saber: ¿qué se rompe si cambio esto?',
+    svy_deps_help: 'Escribe un nombre de función o clase. Ve qué llama. Útil cuando quieres saber: ¿de qué depende esto?',
+    svy_sym_help: 'Encuentra funciones que muchos llaman pero que llaman pocas. A menudo buenos candidatos para refactorizar.',
+    svy_kw_help: 'Sin texto — lista los identificadores más usados. Con texto — encuentra identificadores relacionados con ese texto.',
+    svy_kw_fuzzy_help: 'Separa camelCase y snake_case. Encuentra más coincidencias. Ejemplo: "user" encuentra "getUserById".',
+    svy_idiff_help: 'Compara dos instantáneas del mapa. Muestra qué cambió. Útil después de un gran refactoring.',
+    svy_idiff_prev_help: 'Ruta al archivo de mapa antiguo. Copia .svitovyd/map.txt antes del refactoring, luego compara después.',
+    sch_tasks: 'Tareas', sch_add_task: 'Nueva tarea',
+    sch_name_label: 'Nombre', sch_command_label: 'Comando', sch_stype_label: 'Tipo',
+    sch_time_label: 'Hora HH:MM', sch_dow_label: 'Día', sch_interval_label: 'Intervalo',
+    sch_task_id_label: 'ID tarea (8 primeros car.)',
+    sch_load_logs_btn: 'Cargar logs', scheduler_logs_section: 'Ver logs',
+    sch_name_placeholder: 'Rastreo matutino', sch_command_placeholder: 'simargl index files .',
+    projects_desc: 'Registro de proyectos — nombre a ruta local. Usado por simargl y svitovyd.',
+    proj_desc_label: 'Descripción (opcional)', proj_delete_confirm: '¿Eliminar proyecto?',
+    simargl_desc: 'Búsqueda de código por tarea — indexar un proyecto, luego buscar por descripción.',
+    sim_index_desc: 'Indexa el proyecto con simargl. Crea un índice semántico en ~/.vyrii/.simargl/<project>/.',
+    sim_store: 'Carpeta', sim_query: 'Descripción de tarea',
+    sim_query_ph: 'Corregir fuga de memoria en el pool de conexiones…',
+    sim_top_k: 'Top K', sim_target: 'Objetivo',
+    svitovyd_desc: 'Mapa del proyecto — indexar estructura, luego encontrar/rastrear/dependencias.',
+    svy_index_desc: 'Escanea el directorio del proyecto y escribe .svitovyd/map.txt.',
+    svy_depth: 'Profundidad', svy_find_query: 'Términos de búsqueda',
+    svy_identifier: 'Identificador', svy_depth_label: 'Profundidad',
+    svy_top_k: 'Top K', svy_kw_task: 'Texto de tarea (opcional — extracción)',
+    svy_kw_fuzzy: 'Fuzzy', svy_idiff_prev: 'Ruta del archivo mapa anterior',
+    sim_topn_help: 'Número total de resultados a devolver.',
+    sim_format_label: 'Formato',
+    sim_format_help: 'text — legible. paths — solo rutas. modules — solo módulos. json — JSON crudo.',
+    sim_diff_help: 'Incluir fragmentos de código modificados en los resultados.',
+    sim_noblackholes_help: 'Excluir archivos que aparecen en casi todas las tareas (ruido).',
+    sim_stderr_help: 'Mostrar stderr en el resultado. Desactivado por defecto. Activar para depurar.',
+    sim_rrf_btn: 'Búsqueda RRF', sim_rrf_sources_label: 'Fuentes',
+    sim_rrf_sources_help: 'Pares modo:proyecto separados por coma. Archivos en varias fuentes suben en el ranking.',
+    sim_rrf_topk_help: 'Candidatos por fuente antes de la fusión.',
+    sim_rrf_k_help: 'Constante de amortiguación (predeterminado 60).',
+    sim_blend_help: '0.7 baja archivos amplios (changelog). 1.0 = desactivado.',
+    sim_rrf_help: 'Ejecuta varias búsquedas y fusiona por posición. Un archivo en task y file a la vez sube automáticamente.',
+    // Prompts
+    tab_prompts: 'Prompts', prompts_desc: 'Biblioteca de prompts — guardar y buscar por nombre, modelo o área.',
+    prompts_filter_ph: 'Filtrar por nombre, modelo, área…',
+    prm_add: 'Añadir prompt', prm_name: 'Nombre', prm_desc_label: 'Descripción',
+    prm_model_label: 'Modelo', prm_area_label: 'Área', prm_prompt_label: 'Texto del prompt',
+    prm_add_btn: 'Guardar', prm_none: 'Sin prompts aún',
   },
   pt: {
     logo: 'V Y R I I', tagline: 'ferramentas de IA locais',
@@ -476,6 +800,68 @@ const I18N = {
     team_profile: 'Perfil', team_combine: 'Combinar', team_ctx_mode: 'Contexto',
     team_query_ph: 'Pergunta para todos os workers…', aspects: 'Aspectos (um por worker)',
     run: 'Executar', da_use_team: 'Equipe',
+    tab_scheduler: 'Agendador', tab_projects: 'Projetos', tab_simargl: 'simargl', tab_svitovyd: 'svitovyd',
+    proj_select: 'Projeto', proj_add: 'Adicionar projeto', proj_name: 'Nome', proj_path: 'Caminho',
+    proj_add_btn: 'Adicionar', sim_index_btn: 'Indexar', sim_search_btn: 'Pesquisar',
+    svy_index_btn: 'Indexar', svy_run_btn: 'Executar', sch_create_btn: 'Criar tarefa',
+    sch_toggle_btn: 'Ativar/Desativar', sch_run_now_btn: 'Executar agora', sch_delete_btn: 'Excluir',
+    run_ok: 'Concluído (código {code}, {dur}s)', run_error: 'Erro (código {code})',
+    sim_tab_help: 'Você tem uma tarefa. Não sabe quais arquivos mudar. simargl lê o histórico git e encontra os arquivos mais prováveis.',
+    sim_index_help: 'Lê todos os commits git deste projeto. Cria um índice semântico. Faça isso uma vez antes de pesquisar.',
+    sim_store_help: 'Pasta onde o índice é salvo. Use o padrão a menos que tenha uma razão para mudar.',
+    sim_search_help: 'Escreva o que quer fazer — como um título de Jira. simargl encontra os arquivos com mais probabilidade de mudar.',
+    sim_topk_help: 'Quantos resultados mostrar.',
+    sim_mode_label: 'Modo', sim_mode_help: 'file — busca por conteúdo. aggr — agrupado por módulo (para consultas vagas). task — arquivos via commits git (melhor para bugs específicos). refine — amplia a consulta com termos do projeto dos commits (quando não conhece o vocabulário).',
+    sim_sort_label: 'Ordenar', sim_sort_help: 'rank — por pontuação. freq — por frequência (só task).',
+    sim_target_help: 'file — arquivos. aggr — pastas/pacotes. task — tarefas similares com arquivos alterados.',
+    svy_tab_help: 'Escaneia o código e cria um mapa de todas as funções, classes e seus vínculos.',
+    svy_index_help: 'Escaneia a pasta do projeto. Encontra todas as definições de funções e classes. Salva os vínculos. Resultado: .svitovyd/map.txt.',
+    svy_depth_help: '2 — escaneia definições e chamadas. 3 — também variáveis e parâmetros. Para a maioria dos projetos, 2 é suficiente.',
+    svy_find_help: 'Filtra o mapa por palavra-chave.\nExemplos:\n  auth — encontra blocos com "auth"\n  auth !test — encontra "auth", ignora "test"\n  \\insertUser — encontra exatamente "insertUser"',
+    svy_trace_help: 'Digite um nome de função ou classe. Veja quem a chama. Útil quando quer saber: o que quebra se eu mudar isso?',
+    svy_deps_help: 'Digite um nome de função ou classe. Veja o que ela chama. Útil quando quer saber: do que isso depende?',
+    svy_sym_help: 'Encontra funções que muitos chamam mas que chamam poucas. Frequentemente bons candidatos para refatoração.',
+    svy_kw_help: 'Sem texto — lista os identificadores mais usados. Com texto — encontra identificadores relacionados a esse texto.',
+    svy_kw_fuzzy_help: 'Separa camelCase e snake_case. Encontra mais correspondências. Exemplo: "user" encontra "getUserById".',
+    svy_idiff_help: 'Compara dois instantâneos do mapa. Mostra o que mudou. Útil após uma grande refatoração.',
+    svy_idiff_prev_help: 'Caminho para o arquivo de mapa antigo. Copie .svitovyd/map.txt antes da refatoração, depois compare.',
+    sch_tasks: 'Tarefas', sch_add_task: 'Nova tarefa',
+    sch_name_label: 'Nome', sch_command_label: 'Comando', sch_stype_label: 'Tipo',
+    sch_time_label: 'Hora HH:MM', sch_dow_label: 'Dia', sch_interval_label: 'Intervalo',
+    sch_task_id_label: 'ID tarefa (8 primeiros car.)',
+    sch_load_logs_btn: 'Carregar logs', scheduler_logs_section: 'Ver logs',
+    sch_name_placeholder: 'Rastreamento matinal', sch_command_placeholder: 'simargl index files .',
+    projects_desc: 'Registro de projetos — nome para caminho local. Usado por simargl e svitovyd.',
+    proj_desc_label: 'Descrição (opcional)', proj_delete_confirm: 'Excluir projeto?',
+    simargl_desc: 'Busca de código por tarefa — indexar um projeto, então pesquisar por descrição.',
+    sim_index_desc: 'Indexa o projeto com simargl. Cria um índice semântico em ~/.vyrii/.simargl/<project>/.',
+    sim_store: 'Pasta', sim_query: 'Descrição da tarefa',
+    sim_query_ph: 'Corrigir vazamento de memória no pool de conexões…',
+    sim_top_k: 'Top K', sim_target: 'Alvo',
+    svitovyd_desc: 'Mapa do projeto — indexar estrutura, depois encontrar/rastrear/dependências.',
+    svy_index_desc: 'Escaneia o diretório do projeto e escreve .svitovyd/map.txt.',
+    svy_depth: 'Profundidade', svy_find_query: 'Termos de busca',
+    svy_identifier: 'Identificador', svy_depth_label: 'Profundidade',
+    svy_top_k: 'Top K', svy_kw_task: 'Texto da tarefa (opcional — extração)',
+    svy_kw_fuzzy: 'Fuzzy', svy_idiff_prev: 'Caminho do arquivo mapa anterior',
+    sim_topn_help: 'Total de resultados a retornar.',
+    sim_format_label: 'Formato',
+    sim_format_help: 'text — legível. paths — só caminhos. modules — só módulos. json — JSON bruto.',
+    sim_diff_help: 'Incluir trechos de código alterados nos resultados.',
+    sim_noblackholes_help: 'Excluir arquivos que aparecem em quase todas as tarefas (ruído).',
+    sim_stderr_help: 'Mostrar stderr no resultado. Desativado por padrão. Ativar para depurar erros.',
+    sim_rrf_btn: 'Busca RRF', sim_rrf_sources_label: 'Fontes',
+    sim_rrf_sources_help: 'Pares modo:projeto separados por vírgula. Arquivos em várias fontes sobem no ranking.',
+    sim_rrf_topk_help: 'Candidatos por fonte antes da fusão.',
+    sim_rrf_k_help: 'Constante de amortecimento (padrão 60).',
+    sim_blend_help: '0.7 rebaixa arquivos amplos (changelog). 1.0 = desativado.',
+    sim_rrf_help: 'Executa várias buscas e funde por posição. Um arquivo em task e file ao mesmo tempo sobe automaticamente.',
+    // Prompts
+    tab_prompts: 'Prompts', prompts_desc: 'Biblioteca de prompts — salvar e pesquisar por nome, modelo ou área.',
+    prompts_filter_ph: 'Filtrar por nome, modelo, área…',
+    prm_add: 'Adicionar prompt', prm_name: 'Nome', prm_desc_label: 'Descrição',
+    prm_model_label: 'Modelo', prm_area_label: 'Área', prm_prompt_label: 'Texto do prompt',
+    prm_add_btn: 'Salvar', prm_none: 'Nenhum prompt ainda',
   },
 };
 
@@ -636,8 +1022,13 @@ function switchTab(tab) {
   }
   if (tab === 'rag')      ragRefreshProjects();
   if (tab === 'settings') loadSettings();
-  if (tab === 'profile')  profileLoad();
-  if (tab === 'team')     teamLoadProfiles();
+  if (tab === 'profile')   profileLoad();
+  if (tab === 'team')      teamLoadProfiles();
+  if (tab === 'scheduler') schRefresh();
+  if (tab === 'projects')  projRefresh();
+  if (tab === 'simargl')   loadProjectSelects();
+  if (tab === 'svitovyd')  loadProjectSelects();
+  if (tab === 'prompts')   prmRefresh();
 }
 
 // ── MARKDOWN RENDERER ─────────────────────────────────
@@ -2066,4 +2457,472 @@ async function runTeam() {
     setResult('team-result', t('error_prefix') + e.message);
     progressWrap.style.display = 'none';
   }
+}
+
+// ── PROJECTS ──────────────────────────────────────────
+async function projRefresh() {
+  try {
+    const data = await (await fetch('/vyrii/projects')).json();
+    const list = document.getElementById('proj-list');
+    if (!list) return;
+    const projects = data.projects || [];
+    if (!projects.length) {
+      list.innerHTML = `<div style="font-size:13px;color:var(--text-muted)">${t('loading').replace('…','') + ' — none yet'}</div>`;
+      return;
+    }
+    list.innerHTML = projects.map(p => `
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--input-bg);
+                  border:1px solid var(--border);border-radius:6px">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:13px">${esc(p.name)}</div>
+          <div style="font-size:11px;color:var(--text-muted);word-break:break-all">${esc(p.path)}</div>
+          ${p.description ? `<div style="font-size:11px;color:var(--text-muted)">${esc(p.description)}</div>` : ''}
+        </div>
+        <button class="btn btn-danger btn-sm" onclick="projDelete('${esc(p.name)}')"
+                style="flex-shrink:0" data-i18n="proj_delete_confirm">✕</button>
+      </div>`).join('');
+  } catch (e) { /* ignore */ }
+}
+
+async function projAdd() {
+  const name = document.getElementById('proj-name').value.trim();
+  const path = document.getElementById('proj-path').value.trim();
+  const desc = document.getElementById('proj-desc').value.trim();
+  if (!name || !path) { showToast('Name and path are required'); return; }
+  await fetch('/vyrii/projects', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name, path, description: desc }) });
+  document.getElementById('proj-name').value = '';
+  document.getElementById('proj-path').value = '';
+  document.getElementById('proj-desc').value = '';
+  projRefresh();
+  loadProjectSelects();
+}
+
+async function projDelete(name) {
+  await fetch(`/vyrii/projects/${encodeURIComponent(name)}`, { method: 'DELETE' });
+  projRefresh();
+  loadProjectSelects();
+}
+
+async function loadProjectSelects() {
+  try {
+    const data = await (await fetch('/vyrii/projects')).json();
+    const projects = data.projects || [];
+    const opts = `<option value="">— select project —</option>` +
+      projects.map(p => `<option value="${esc(p.name)}">${esc(p.name)} — ${esc(p.path)}</option>`).join('');
+    ['sim-project', 'svy-project'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { const cur = el.value; el.innerHTML = opts; if (cur) el.value = cur; }
+    });
+  } catch { /* offline */ }
+}
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ── GENERIC CLI RUN HELPER ────────────────────────────
+async function _runCmd(command, cwd, resultId, busyId, showStderr = true) {
+  if (busyId) { const b = document.getElementById(busyId); if (b) b.style.display = ''; }
+  const box = document.getElementById(resultId);
+  if (box) box.innerHTML = `<span style="color:var(--text-muted)">${t('loading')}</span>`;
+  try {
+    const data = await (await fetch('/vyrii/run', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ command, cwd: cwd || '' }),
+    })).json();
+    if (busyId) { const b = document.getElementById(busyId); if (b) b.style.display = 'none'; }
+    if (data.error) { if (box) box.textContent = 'Error: ' + data.error; return; }
+    const out = (data.stdout || '') + (showStderr && data.stderr ? '\n[stderr]\n' + data.stderr : '');
+    const status = data.returncode === 0
+      ? t('run_ok').replace('{code}', data.returncode).replace('{dur}', data.duration_s)
+      : t('run_error').replace('{code}', data.returncode);
+    if (box) box.textContent = status + '\n\n' + out.trim();
+  } catch (e) {
+    if (busyId) { const b = document.getElementById(busyId); if (b) b.style.display = 'none'; }
+    if (box) box.textContent = t('error_prefix') + e.message;
+  }
+}
+
+function _getProject(selectId, infoId) {
+  const sel = document.getElementById(selectId);
+  if (!sel || !sel.value) { showToast('Select a project first'); return null; }
+  return sel.value;
+}
+
+function _getProjectPath(selectId) {
+  const sel = document.getElementById(selectId);
+  if (!sel || !sel.value) return null;
+  const opt = sel.options[sel.selectedIndex];
+  // path is encoded in the option text after ' — '
+  const text = opt ? opt.textContent : '';
+  const idx = text.indexOf(' — ');
+  return idx >= 0 ? text.slice(idx + 3) : null;
+}
+
+// ── SIMARGL ───────────────────────────────────────────
+function simSubtab(name) {
+  ['index','search','rrf'].forEach(n => {
+    document.getElementById(`sim-pane-${n}`).style.display = n === name ? '' : 'none';
+    document.getElementById(`sim-tab-${n}`).classList.toggle('subtab-active', n === name);
+  });
+}
+
+function simProjectChanged() {
+  const path = _getProjectPath('sim-project');
+  const info = document.getElementById('sim-path-info');
+  if (info) info.textContent = path ? path : '';
+}
+
+async function simRunRrf() {
+  const path = _getProjectPath('sim-project');
+  if (!path) { showToast('Select a project first'); return; }
+  const query   = document.getElementById('rrf-query').value.trim();
+  if (!query) { showToast('Enter a task description'); return; }
+  const sources = document.getElementById('rrf-sources').value.trim() || 'task:default,file:default';
+  const topn    = document.getElementById('rrf-topn').value    || '10';
+  const topk    = document.getElementById('rrf-topk').value    || '10';
+  const k       = document.getElementById('rrf-k').value       || '60';
+  const sort    = document.getElementById('rrf-sort').value    || 'freq';
+  const format  = document.getElementById('rrf-format').value  || 'text';
+  const blend   = document.getElementById('rrf-blend').value   || '1.0';
+  const showStderr = document.getElementById('rrf-stderr').checked;
+
+  let cmd = `simargl rrf ${JSON.stringify(query)}`
+    + ` --sources ${sources} --store-dir .simargl`
+    + ` --top-n ${topn} --top-k ${topk} --k ${k}`
+    + ` --sort ${sort} --format ${format}`;
+  if (parseFloat(blend) !== 1.0) cmd += ` --score-blend ${blend}`;
+
+  await _runCmd(cmd, path, 'sim-result', null, showStderr);
+}
+
+async function simRunIndex() {
+  const name = _getProject('sim-project', 'sim-path-info');
+  if (!name) return;
+  const path = _getProjectPath('sim-project');
+  const cmd = `simargl index files . --project ${name} --store .simargl`;
+  await _runCmd(cmd, path, 'sim-result', null);
+}
+
+function simModeChanged() {
+  const mode = document.getElementById('sim-mode').value;
+  const isTask   = mode === 'task';
+  const needsTopK = mode !== 'file';
+  const el = (id) => document.getElementById(id);
+  if (el('sim-sort-wrap'))     el('sim-sort-wrap').style.display     = isTask ? '' : 'none';
+  if (el('sim-topk-wrap'))     el('sim-topk-wrap').style.display     = needsTopK ? '' : 'none';
+}
+
+async function simRunSearch() {
+  const name = _getProject('sim-project', 'sim-path-info');
+  if (!name) return;
+  const path = _getProjectPath('sim-project');
+  const query = document.getElementById('sim-query').value.trim();
+  if (!query) { showToast('Enter a task description'); return; }
+
+  const mode    = document.getElementById('sim-mode').value    || 'file';
+  const format  = document.getElementById('sim-format').value  || 'text';
+  const topn    = document.getElementById('sim-topn').value    || '10';
+  const topk    = document.getElementById('sim-topk').value    || '10';
+  const sort    = document.getElementById('sim-sort').value    || 'rank';
+  const diff       = document.getElementById('sim-diff').checked;
+  const noBH       = document.getElementById('sim-noblackholes').checked;
+  const showStderr = document.getElementById('sim-stderr').checked;
+
+  let cmd = `simargl search ${JSON.stringify(query)}`
+    + ` --project ${name} --store-dir .simargl`
+    + ` --mode ${mode} --format ${format} --top-n ${topn}`;
+  if (mode !== 'file') cmd += ` --top-k ${topk}`;
+  if (mode === 'task') cmd += ` --sort ${sort}`;
+  if (diff)  cmd += ' --diff';
+  if (noBH)  cmd += ' --no-blackholes';
+
+  await _runCmd(cmd, path, 'sim-result', null, showStderr);
+}
+
+function _homeDir() {
+  // best-effort: resolve ~ based on known API paths (not needed server-side)
+  return '';
+}
+
+// ── SVITOVYD ──────────────────────────────────────────
+function svySubtab(name) {
+  ['index','find','trace','deps','sym','kw','idiff'].forEach(n => {
+    document.getElementById(`svy-pane-${n}`).style.display = n === name ? '' : 'none';
+    document.getElementById(`svy-tab-${n}`).classList.toggle('subtab-active', n === name);
+  });
+}
+
+function svyProjectChanged() {
+  const path = _getProjectPath('svy-project');
+  const info = document.getElementById('svy-path-info');
+  if (info) info.textContent = path ? path : '';
+}
+
+async function svyRun(op) {
+  const name = _getProject('svy-project', 'svy-path-info');
+  if (!name) return;
+  const path = _getProjectPath('svy-project');
+  let cmd = '';
+
+  if (op === 'index') {
+    const depth = document.getElementById('svy-depth').value || '2';
+    cmd = `svitovyd index . ${depth} --stdout`;
+  } else if (op === 'find') {
+    const q = document.getElementById('svy-find-q').value.trim();
+    if (!q) { showToast('Enter query tokens'); return; }
+    cmd = `svitovyd find ${q}`;
+  } else if (op === 'trace') {
+    const id = document.getElementById('svy-trace-id').value.trim();
+    if (!id) { showToast('Enter identifier'); return; }
+    const depth = document.getElementById('svy-trace-depth').value || '8';
+    cmd = `svitovyd trace ${id} --depth ${depth}`;
+  } else if (op === 'deps') {
+    const id = document.getElementById('svy-deps-id').value.trim();
+    if (!id) { showToast('Enter identifier'); return; }
+    const depth = document.getElementById('svy-deps-depth').value || '8';
+    cmd = `svitovyd deps ${id} --depth ${depth}`;
+  } else if (op === 'sym') {
+    const k = document.getElementById('svy-sym-k').value || '5';
+    cmd = `svitovyd sym --k ${k}`;
+  } else if (op === 'kw') {
+    const taskText = document.getElementById('svy-kw-task').value.trim();
+    const k = document.getElementById('svy-kw-k').value || '50';
+    const fuzzy = document.getElementById('svy-kw-fuzzy').checked ? ' -f' : '';
+    if (taskText) {
+      cmd = `svitovyd keywords extract ${JSON.stringify(taskText)}${fuzzy}`;
+    } else {
+      cmd = `svitovyd keywords --k ${k}`;
+    }
+  } else if (op === 'idiff') {
+    const prev = document.getElementById('svy-idiff-prev').value.trim();
+    if (!prev) { showToast('Enter previous map file path'); return; }
+    cmd = `svitovyd idiff --prev ${prev}`;
+  }
+
+  await _runCmd(cmd, path, 'svy-result', 'svy-running');
+}
+
+// ── SCHEDULER ─────────────────────────────────────────
+async function _schFetch(url, opts) {
+  const res = await fetch(url, opts);
+  return res.json();
+}
+
+function schTypeChanged() {
+  const stype = document.getElementById('sch-stype').value;
+  const timeRow = document.getElementById('sch-time-row');
+  const dowWrap = document.getElementById('sch-dow-wrap');
+  const intWrap = document.getElementById('sch-interval-wrap');
+  const isInterval = stype.startsWith('interval_');
+  if (timeRow) timeRow.style.display = isInterval ? 'none' : '';
+  if (dowWrap) dowWrap.style.display = stype === 'weekly' ? '' : 'none';
+  if (intWrap) intWrap.style.display = isInterval ? '' : 'none';
+}
+
+async function schRefresh() {
+  try {
+    const data = await _schFetch('/vyrii/scheduler/tasks');
+    const tasks = data.tasks || [];
+    const box = document.getElementById('sch-table');
+    if (!box) return;
+    if (!tasks.length) { box.textContent = 'No scheduled tasks yet.'; return; }
+    const rows = tasks.map((task, i) => {
+      const stype = task.schedule_type || 'daily';
+      const h = String(task.hour || 9).padStart(2,'0');
+      const m = String(task.minute || 0).padStart(2,'0');
+      let sched = stype === 'daily' ? `Daily ${h}:${m}`
+        : stype === 'weekly' ? `Weekly ${task.day_of_week || 'mon'} ${h}:${m}`
+        : stype === 'monthly' ? `Monthly day ${task.interval_value||1} ${h}:${m}`
+        : `Every ${task.interval_value||'?'} ${stype.split('_')[1]}`;
+      const status = task.last_status || '—';
+      const on = task.enabled !== false ? '✅' : '⏸';
+      return `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:11px;font-family:monospace;color:var(--text-muted);width:70px">${task.id.slice(0,8)}</span>
+        <span style="flex:1;font-size:13px">${esc(task.name)}</span>
+        <span style="font-size:11px;color:var(--text-muted);width:140px">${sched}</span>
+        <span style="font-size:11px;width:60px">${status}</span>
+        <span style="width:20px">${on}</span>
+      </div>`;
+    }).join('');
+    box.innerHTML = rows;
+  } catch (e) {
+    const box = document.getElementById('sch-table');
+    if (box) box.textContent = t('error_prefix') + e.message;
+  }
+}
+
+async function schCreate() {
+  const name    = document.getElementById('sch-name').value.trim();
+  const command = document.getElementById('sch-command').value.trim();
+  const stype   = document.getElementById('sch-stype').value;
+  if (!name || !command) { showToast('Name and command required'); return; }
+  const timeVal = document.getElementById('sch-time').value || '09:00';
+  const [hh, mm] = timeVal.split(':').map(Number);
+  const body = {
+    name, command, schedule_type: stype,
+    hour: hh || 9, minute: mm || 0,
+    day_of_week: document.getElementById('sch-dow').value || 'mon',
+    interval_value: parseInt(document.getElementById('sch-interval').value || '60'),
+  };
+  const data = await _schFetch('/vyrii/scheduler/tasks', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if (data.error) { showToast(data.error); return; }
+  showToast('Task created');
+  document.getElementById('sch-name').value = '';
+  document.getElementById('sch-command').value = '';
+  schRefresh();
+}
+
+function _schId() {
+  const v = (document.getElementById('sch-task-id').value || '').trim();
+  if (!v) { showToast('Enter task ID prefix'); return null; }
+  return v;
+}
+
+async function schToggle() {
+  const prefix = _schId(); if (!prefix) return;
+  const tasks = (await _schFetch('/vyrii/scheduler/tasks')).tasks || [];
+  const task = tasks.find(t => t.id.startsWith(prefix));
+  if (!task) { showToast('Task not found'); return; }
+  const data = await _schFetch(`/vyrii/scheduler/tasks/${task.id}/toggle`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
+  showToast(data.enabled ? 'Enabled' : 'Disabled');
+  schRefresh();
+}
+
+async function schRunNow() {
+  const prefix = _schId(); if (!prefix) return;
+  const tasks = (await _schFetch('/vyrii/scheduler/tasks')).tasks || [];
+  const task = tasks.find(t => t.id.startsWith(prefix));
+  if (!task) { showToast('Task not found'); return; }
+  await _schFetch(`/vyrii/scheduler/tasks/${task.id}/run`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
+  showToast('Running in background');
+}
+
+async function schDelete() {
+  const prefix = _schId(); if (!prefix) return;
+  const tasks = (await _schFetch('/vyrii/scheduler/tasks')).tasks || [];
+  const task = tasks.find(t => t.id.startsWith(prefix));
+  if (!task) { showToast('Task not found'); return; }
+  await _schFetch(`/vyrii/scheduler/tasks/${task.id}`, { method: 'DELETE' });
+  showToast('Deleted');
+  document.getElementById('sch-task-id').value = '';
+  schRefresh();
+}
+
+async function schLoadLogs() {
+  const prefix = (document.getElementById('sch-log-id').value || '').trim();
+  if (!prefix) { showToast('Enter task ID prefix'); return; }
+  const tasks = (await _schFetch('/vyrii/scheduler/tasks')).tasks || [];
+  const task = tasks.find(t => t.id.startsWith(prefix));
+  if (!task) { showToast('Task not found'); return; }
+  const data = await _schFetch(`/vyrii/scheduler/tasks/${task.id}/logs`);
+  const sel = document.getElementById('sch-log-sel');
+  if (!sel) return;
+  sel.innerHTML = (data.logs || []).map(l =>
+    `<option value="${esc(l.filename)}">${esc(l.filename)}</option>`
+  ).join('');
+  if (sel.options.length) schReadLog(sel.options[0].value);
+}
+
+async function schReadLog(filename) {
+  if (!filename) return;
+  const box = document.getElementById('sch-log-content');
+  if (box) box.textContent = t('loading');
+  try {
+    const data = await _schFetch(`/vyrii/scheduler/log?filename=${encodeURIComponent(filename)}`);
+    if (box) box.textContent = data.content || '(empty)';
+  } catch (e) {
+    if (box) box.textContent = t('error_prefix') + e.message;
+  }
+}
+
+// ── PROMPT LIBRARY ────────────────────────────────────
+let _prmAll = [];
+
+async function prmRefresh() {
+  try {
+    const data = await (await fetch('/vyrii/prompts')).json();
+    _prmAll = data.prompts || [];
+    prmRender(document.getElementById('prm-filter')?.value || '');
+  } catch { /* offline */ }
+}
+
+function prmRender(filter) {
+  const list = document.getElementById('prm-list');
+  if (!list) return;
+  const q = (filter || '').toLowerCase();
+  const items = q
+    ? _prmAll.filter(p =>
+        (p.name||'').toLowerCase().includes(q) ||
+        (p.description||'').toLowerCase().includes(q) ||
+        (p.model||'').toLowerCase().includes(q) ||
+        (p.area||'').toLowerCase().includes(q) ||
+        (p.prompt||'').toLowerCase().includes(q)
+      )
+    : _prmAll;
+  if (!items.length) {
+    list.innerHTML = `<div style="font-size:13px;color:var(--text-muted)">${t('prm_none')}</div>`;
+    return;
+  }
+  list.innerHTML = items.map(p => `
+    <div style="padding:10px 12px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+        <span style="font-weight:600;font-size:13px;flex:1;min-width:80px">${esc(p.name)}</span>
+        ${p.model ? `<span style="font-size:11px;padding:2px 8px;background:var(--accent-dim);color:var(--accent);border-radius:10px">${esc(p.model)}</span>` : ''}
+        ${p.area  ? `<span style="font-size:11px;padding:2px 8px;background:var(--surface);color:var(--text-muted);border-radius:10px;border:1px solid var(--border)">${esc(p.area)}</span>` : ''}
+      </div>
+      ${p.description ? `<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">${esc(p.description)}</div>` : ''}
+      <div style="font-size:12px;font-family:monospace;background:var(--code-bg);border-radius:4px;padding:8px;white-space:pre-wrap;word-break:break-word;max-height:140px;overflow-y:auto">${esc(p.prompt)}</div>
+      <div style="display:flex;gap:6px;margin-top:8px;align-items:center">
+        <button class="btn btn-primary btn-sm" onclick="prmAddToChat('${esc(p.id)}')" data-i18n="add_to_chat">Add to chat</button>
+        <button class="btn btn-ghost btn-sm" onclick="prmCopy('${esc(p.id)}')" data-i18n="copy">Copy</button>
+        <button class="btn btn-danger btn-sm" onclick="prmDelete('${esc(p.id)}')" style="margin-left:auto">✕</button>
+      </div>
+    </div>`).join('');
+}
+
+function prmFilter() {
+  prmRender(document.getElementById('prm-filter')?.value || '');
+}
+
+async function prmAdd() {
+  const name   = document.getElementById('prm-name').value.trim();
+  const prompt = document.getElementById('prm-prompt').value.trim();
+  if (!name || !prompt) { showToast('Name and prompt text are required'); return; }
+  await fetch('/vyrii/prompts', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      name,
+      prompt,
+      description: document.getElementById('prm-desc').value.trim(),
+      model:       document.getElementById('prm-model').value.trim(),
+      area:        document.getElementById('prm-area').value.trim(),
+    }),
+  });
+  ['prm-name','prm-desc','prm-model','prm-area','prm-prompt'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  prmRefresh();
+}
+
+async function prmDelete(id) {
+  await fetch(`/vyrii/prompts/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  prmRefresh();
+}
+
+function prmAddToChat(id) {
+  const p = _prmAll.find(x => x.id === id);
+  if (!p) return;
+  const inp = document.getElementById('chat-input');
+  if (!inp) return;
+  inp.value = inp.value ? inp.value + '\n\n' + p.prompt : p.prompt;
+  autoResize(inp);
+  switchTab('chat');
+  inp.focus();
+}
+
+function prmCopy(id) {
+  const p = _prmAll.find(x => x.id === id);
+  if (!p) return;
+  navigator.clipboard.writeText(p.prompt).then(() => showToast(t('copied')));
 }
