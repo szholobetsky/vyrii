@@ -38,7 +38,11 @@ function _hideLoginOverlay() {
 
 function doLogout() {
   sessionStorage.removeItem('vyrii_creds');
-  _showLoginOverlay();
+  // Hit the logout endpoint with fake credentials so the browser clears its Basic Auth cache.
+  // Without this the browser auto-sends old cached credentials on the next probe and bypasses the overlay.
+  fetch('/vyrii/auth/logout', {
+    headers: { 'Authorization': 'Basic ' + btoa('logout:logout') }
+  }).catch(() => {}).finally(() => _showLoginOverlay());
 }
 
 async function doLogin() {

@@ -223,8 +223,12 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
 
         @app.middleware("http")
         async def _basic_auth(request: _Request, call_next):
+            # Logout endpoint: always 401 + WWW-Authenticate so browser clears its credential cache
+            if request.url.path == "/vyrii/auth/logout":
+                return _AuthResponse(status_code=401,
+                                     headers={"WWW-Authenticate": 'Basic realm="vyrii"'})
             # Static UI files are public — credentials are handled in-app via JS
-            if request.method == "OPTIONS" or request.url.path.startswith("/ui"):
+            if request.method == "OPTIONS" or request.url.path.startswith("/ui") or request.url.path == "/":
                 return await call_next(request)
             exp_user, exp_pass = _read_auth_cfg()
             auth_hdr = request.headers.get("Authorization", "")
@@ -237,7 +241,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
                     pass
             return _AuthResponse(
                 status_code=401,
-                headers={"WWW-Authenticate": 'Basic realm="vyrii"'},
+                headers={},
             )
 
     def _default_model() -> str:

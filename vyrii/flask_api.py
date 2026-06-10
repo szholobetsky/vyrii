@@ -57,7 +57,10 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
 
         @app.before_request
         def _basic_auth():
-            if request.method == "OPTIONS" or request.path.startswith("/ui"):
+            # Logout endpoint: always 401 + WWW-Authenticate so browser clears its credential cache
+            if request.path == "/vyrii/auth/logout":
+                return Response("", 401, {"WWW-Authenticate": 'Basic realm="vyrii"'})
+            if request.method == "OPTIONS" or request.path.startswith("/ui") or request.path == "/":
                 return None
             exp_user, exp_pass = _read_auth_cfg()
             hdr = request.headers.get("Authorization", "")
@@ -68,10 +71,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
                         return None
                 except Exception:
                     pass
-            return Response(
-                "Unauthorized", 401,
-                {"WWW-Authenticate": 'Basic realm="vyrii"'},
-            )
+            return Response("Unauthorized", 401)
 
     def _default_model() -> str:
         models = list_models(base_url, backend)
@@ -1157,10 +1157,11 @@ def main(port: int = 5000, host: str = "0.0.0.0",
          base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
          auth: bool = False) -> None:
     app = create_app(base_url=base_url, backend=backend, auth=auth)
-    print(f"vyrii Flask -> http://localhost:{port}  (UI: /ui/)")
+    print(f"vyrii -> http://localhost:{port}  (UI: /ui/)")
     print(f"  backend : {base_url}  ({backend})")
     print(f"  auth    : {'on' if auth else 'off'}")
-    app.run(host=host, port=port, threaded=True)
+    from waitress import serve
+    serve(app, host=host, port=port, threads=8)
 
 
 if __name__ == "__main__":

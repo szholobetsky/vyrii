@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vyrii"
-version = "0.1.7"
+version = "0.1.8"
 description = "Local AI web UI — chat, translate, web research, deep document generation, RAG, and file management via Gradio. Powered by Ollama or any OpenAI-compatible backend."
 requires-python = ">=3.10"
 readme = {file = "README.md", content-type = "text/markdown"}
@@ -13,6 +13,7 @@ dependencies = [
     "flask>=3.0",
     "flask-cors>=4.0",
     "apscheduler>=3.10",
+    "waitress>=2.1",
 ]
 
 [project.optional-dependencies]

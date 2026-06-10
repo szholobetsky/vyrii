@@ -120,7 +120,8 @@ def _run_flask(args, api_url, api_backend) -> None:
     print(f"vyrii -> http://localhost:{port}  (UI: /ui/)")
     print(f"  backend : {api_url}  ({api_backend})")
     print(f"  auth    : {'on' if args.auth else 'off'}")
-    app.run(host=args.bind, port=port, threaded=True)
+    from waitress import serve
+    serve(app, host=args.bind, port=port, threads=8)
 
 
 def _run_ui_only(args, api_url, api_backend, lang, startup_model) -> None:
