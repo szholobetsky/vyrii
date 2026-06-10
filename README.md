@@ -87,6 +87,8 @@ Switch theme (including GithubDark, Dracula, Solarized), language (EN/UK), timeo
 pip install vyrii
 ```
 
+Works on any platform — including Android Termux — without a Rust toolchain.
+
 ### Option 2 — Clone
 
 ```bash
@@ -110,19 +112,12 @@ pip install vyrii
 vyrii
 ```
 
-Open `http://localhost:4896` — the Chat tab is ready. Pick `qwen3:1.7b` in the model selector and start talking.
+Open `http://localhost:5000/ui/` — the Chat tab is ready. Pick `qwen3:1.7b` in the model selector and start talking.
 
 Custom port:
 
 ```bash
-vyrii --ui 8001
-```
-
-No Gradio (HTML UI only, e.g. on Termux or a headless server):
-
-```bash
-vyrii --api 8000
-# open http://localhost:8000/ui/
+vyrii -p 8002
 ```
 
 For Ukrainian UI:
@@ -131,92 +126,88 @@ For Ukrainian UI:
 vyrii --lang uk
 ```
 
-For a dark theme:
-
-```bash
-vyrii --theme GithubDark
-```
-
 ---
 
-## Two UI modes
+## Three UI modes
 
-vyrii offers two independent interfaces — use one or both at the same time:
+### Default — Flask + HTML UI
+
+`pip install vyrii` and `vyrii` is all you need. The built-in Flask server starts on port 5000 and serves a full single-page HTML interface at `/ui/`. Pure Python, no Rust, works on any platform including Android Termux.
+
+```bash
+vyrii               # http://localhost:5000/ui/
+vyrii -p 8002       # custom port
+```
+
+All features are available: Chat, Translate, RAG, WebAsk, WebCrawl, DeepAgent, Team, Files, Scheduler, Prompts, and more.
+
+### FastAPI server (`--api`)
+
+For those who prefer FastAPI or need OpenAPI docs at `/docs`. Requires `fastapi` and `uvicorn` (pulls in Rust-based `pydantic-core`).
+
+```bash
+pip install 'vyrii[api]'
+vyrii --api           # http://localhost:5001/ui/
+vyrii --api 8000      # custom port
+```
 
 ### Gradio UI (`--ui`)
 
-The full-featured Gradio interface. Good for desktop use and interactive workflows.
+The full-featured Gradio interface. Requires the Gradio stack (Rust-based packages — not suitable for Termux or constrained environments).
 
 ```bash
-vyrii               # Gradio UI on http://localhost:4896
-vyrii --ui 8001     # custom port
+pip install 'vyrii[gradio]'
+vyrii --ui            # http://localhost:4896
+vyrii --ui 8001       # custom port
 ```
 
-> **Note:** Gradio has a heavy Python dependency stack. On constrained environments — Android Termux, low-RAM systems, single-board computers — Gradio may fail to start or render poorly. Use the HTML UI in those cases.
-
-### Lightweight HTML UI (`--api` + `/ui/`)
-
-A self-contained single-page app served at `/ui/` by the FastAPI server. No Gradio required — runs in any browser including mobile Chrome. Ideal for headless servers, Termux, and LAN access from a phone.
+### Mix and match
 
 ```bash
-vyrii --api 8000
-# open http://<your-ip>:8000/ui/
-```
-
-All tabs (Chat, Translate, RAG, WebAsk, WebCrawl, Team, etc.) are available in the HTML UI.
-
-### Both at the same time
-
-```bash
-vyrii --ui 8001 --api 8000
+vyrii --ui 8001 --api 5001
 # Gradio: http://localhost:8001
-# HTML UI: http://localhost:8000/ui/
+# HTML UI: http://localhost:5001/ui/
 ```
 
 ---
 
 ## Requirements
 
-| Dependency | Version |
-|---|---|
-| Python | ≥ 3.10 |
-| gradio | ≥ 6.0 |
-| requests | ≥ 2.28 |
-| [Ollama](https://ollama.com) | any recent version |
+| Dependency | Version | Notes |
+|---|---|---|
+| Python | ≥ 3.10 | |
+| flask | ≥ 3.0 | included in base install |
+| flask-cors | ≥ 4.0 | included in base install |
+| requests | ≥ 2.28 | included in base install |
+| apscheduler | ≥ 3.10 | included in base install |
+| [Ollama](https://ollama.com) | any recent version | |
 
-Optional:
-- `lxml` — for web crawl and HTML extraction (`pip install 'vyrii[web]'`)
-- `lxml_html_clean` — for cleaner HTML extraction (`pip install 'vyrii[html]'`)
-- `fastapi` + `uvicorn` — for the REST API server (`pip install 'vyrii[api]'`)
-- `simargl` — for RAG and WebIndex (`pip install simargl`)
-- `argostranslate` — for offline translation mini mode
-- `ctranslate2` + `sentencepiece` — for NLLB-200 offline translation
+Optional extras:
+- `pip install 'vyrii[gradio]'` — Gradio UI (`--ui`)
+- `pip install 'vyrii[api]'` — FastAPI server (`--api`)
+- `pip install 'vyrii[web]'` — web crawl and HTML extraction (lxml)
+- `pip install 'vyrii[html]'` — cleaner HTML extraction (lxml + lxml_html_clean)
+- `pip install 'vyrii[full]'` — everything above
+- `pip install simargl` — RAG and WebIndex
+- `pip install argostranslate` — offline translation mini mode
+- `pip install ctranslate2 sentencepiece` — NLLB-200 offline translation
 
 ### Termux (Android)
 
 ```bash
-pkg update
-pkg install python
+pkg update && pkg install python
 
-# core install — chat, translate, file manager, RAG (no web crawl)
 pip install vyrii
 
-# optional: add web crawl support
+# optional: web crawl support (pre-compiled for ARM, no source build)
 pkg install python-lxml
-```
 
-Chat, translate, web search, and file management work without lxml. Web crawl requires lxml — install it via `pkg install python-lxml` (pre-compiled for ARM, avoids source build).
-
-**Gradio is hard to run on Termux.** Use the lightweight HTML UI instead:
-
-```bash
-# in Termux:
-OLLAMA_HOST=0.0.0.0:11434 ollama serve &
-vyrii --api 8000 --bind 0.0.0.0
+# start
+vyrii --bind 0.0.0.0
 
 # open in any browser:
-# http://127.0.0.1:8000/ui/          ← same device
-# http://192.168.x.x:8000/ui/        ← from any device on the same LAN
+# http://127.0.0.1:5000/ui/          ← same device
+# http://192.168.x.x:5000/ui/        ← from any device on the LAN
 ```
 
 ---
@@ -224,7 +215,8 @@ vyrii --api 8000 --bind 0.0.0.0
 ## Running
 
 ```bash
-vyrii
+vyrii           # Flask + HTML UI on :5000
+vyrii -p 8002   # custom port
 ```
 
 Common options:
@@ -233,7 +225,6 @@ Common options:
 vyrii --host http://localhost:11434    # Ollama (default)
 vyrii --host openai://localhost:1234   # LMStudio or any OpenAI-compatible server
 vyrii --lang uk                        # Ukrainian UI
-vyrii --theme GithubDark
 vyrii --model qwen3:1.7b               # default model on startup
 ```
 
@@ -242,14 +233,14 @@ vyrii --model qwen3:1.7b               # default model on startup
 By default vyrii listens on `0.0.0.0` (all interfaces). To restrict to localhost only:
 
 ```bash
-vyrii --bind 127.0.0.1 --ui 4896
-vyrii --bind 127.0.0.1 --api 8000
+vyrii --bind 127.0.0.1
+vyrii --bind 127.0.0.1 -p 8002
 ```
 
 To expose on the LAN (e.g., access from a phone):
 
 ```bash
-vyrii --bind 0.0.0.0 --api 8000
+vyrii --bind 0.0.0.0
 ```
 
 ### Authentication (`--auth`)
@@ -260,19 +251,19 @@ Add `--auth` to enable HTTP Basic Auth on all API endpoints:
 
 ```bash
 # home / LAN cable — no login needed
-vyrii --api 8000
+vyrii
 
 # office / phone over Wi-Fi — protect with a password
-vyrii --api 8000 --ui 8001 --auth
+vyrii --auth
 ```
 
-Default credentials are `admin` / `admin`. Change them via the **Settings → Authentication** section in either the Gradio UI or the HTML UI — no display or terminal access required. Credentials are stored in `~/.vyrii/config.json`.
+Default credentials are `admin` / `admin`. Change them via the **Settings → Authentication** section in the HTML UI — no display or terminal access required. Credentials are stored in `~/.vyrii/config.json`.
 
 Static UI files at `/ui/` are always served without auth so the login page loads even before credentials are entered.
 
 ### API endpoints
 
-When running with `--api`, the following endpoints are available:
+The following endpoints are available in all server modes (Flask default, `--api` FastAPI):
 
 - `GET  /v1/models` — list available models
 - `POST /v1/chat/completions` — OpenAI-compatible chat (streaming + non-streaming)
@@ -287,7 +278,7 @@ When running with `--api`, the following endpoints are available:
 - `DELETE /vyrii/files`
 - `POST /vyrii/files/index`
 
-Interactive API docs: `http://localhost:<port>/docs`
+Interactive API docs (FastAPI only): `http://localhost:<port>/docs`
 
 ---
 
@@ -297,7 +288,8 @@ Interactive API docs: `http://localhost:<port>/docs`
 vyrii/
 ├── vyrii/
 │   ├── app.py           # Gradio UI — all tabs and handlers
-│   ├── api.py           # FastAPI REST server
+│   ├── api.py           # FastAPI REST server (optional, vyrii[api])
+│   ├── flask_api.py     # Flask REST server (default, zero Rust deps)
 │   ├── engine.py        # LLM streaming, model listing, smart context
 │   ├── adapter.py       # ChatAdapter — unified interface for flows
 │   ├── tools.py         # fetch_text, HTML stripping

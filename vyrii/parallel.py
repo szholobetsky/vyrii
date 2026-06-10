@@ -16,7 +16,7 @@ _PROFILES_FILE: Path | None = None
 def init(vyrii_home: Path) -> None:
     global _PROFILES_FILE
     _PROFILES_FILE = vyrii_home / "parallel_profiles.json"
-    (vyrii_home / "exports").mkdir(exist_ok=True)
+    (vyrii_home / "exports").mkdir(parents=True, exist_ok=True)
 
 
 def _profiles_file() -> Path:

@@ -1,8 +1,11 @@
 """vyrii entry point.
 
 Usage:
-  vyrii                                        Gradio UI on port 4896
-  vyrii --ui 8001 --api 8000                   both servers
+  vyrii                                        Flask API + HTML UI on port 5000
+  vyrii -p 8002                                Flask on custom port
+  vyrii --api                                  FastAPI on port 5001  (requires pip install vyrii[api])
+  vyrii --ui                                   Gradio UI on port 4896 (requires pip install vyrii[gradio])
+  vyrii --ui 8001 --api 5001                   Gradio + FastAPI together
   vyrii --host localhost:11434                  custom Ollama host
   vyrii --host openai://localhost:1234          OpenAI-compatible backend
   vyrii --lang uk --model qwen2.5:7b            language + default model
@@ -52,10 +55,12 @@ def main() -> None:
         description="Local AI tools",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser.add_argument("-p", "--port", type=int, metavar="PORT", default=None,
+                        help="Flask server port (default: 5000)")
     parser.add_argument("--ui",  type=int, metavar="PORT", nargs="?", const=4896,
-                        help="Gradio UI port (default: 4896)")
-    parser.add_argument("--api", type=int, metavar="PORT", nargs="?", const=5000,
-                        help="REST API port (default: 5000)")
+                        help="Gradio UI port (default: 4896) — requires pip install vyrii[gradio]")
+    parser.add_argument("--api", type=int, metavar="PORT", nargs="?", const=5001,
+                        help="FastAPI port (default: 5001) — requires pip install vyrii[api]")
     parser.add_argument("--bind", default="0.0.0.0", metavar="ADDR",
                         help="Network interface to listen on (default: 0.0.0.0)")
     parser.add_argument("--auth", action="store_true",
@@ -72,8 +77,10 @@ def main() -> None:
                         help="Default model to select on startup")
     args = parser.parse_args()
 
+    # default: Flask server if no mode flag given
     if args.ui is None and args.api is None:
-        args.ui = 4896
+        if args.port is None:
+            args.port = 5000
 
     from .engine import BACKEND_OLLAMA, BACKEND_OPENAI
 
@@ -96,12 +103,32 @@ def main() -> None:
         _run_both(args, api_url, api_backend, lang, startup_model)
     elif args.api:
         _run_api_only(args, api_url, api_backend)
-    else:
+    elif args.ui:
         _run_ui_only(args, api_url, api_backend, lang, startup_model)
+    else:
+        _run_flask(args, api_url, api_backend)
+
+
+def _run_flask(args, api_url, api_backend) -> None:
+    try:
+        from .flask_api import create_app
+    except ImportError:
+        print("Flask not found — run: pip install vyrii")
+        raise SystemExit(1)
+    app = create_app(base_url=api_url, backend=api_backend, auth=args.auth)
+    port = args.port or 5000
+    print(f"vyrii -> http://localhost:{port}  (UI: /ui/)")
+    print(f"  backend : {api_url}  ({api_backend})")
+    print(f"  auth    : {'on' if args.auth else 'off'}")
+    app.run(host=args.bind, port=port, threaded=True)
 
 
 def _run_ui_only(args, api_url, api_backend, lang, startup_model) -> None:
-    from .app import main as _gradio
+    try:
+        from .app import main as _gradio
+    except ImportError:
+        print("Gradio UI requires: pip install vyrii[gradio]")
+        raise SystemExit(1)
     _gradio(port=args.ui, host=args.bind,
             ollama_url=api_url,
             openai_url=args.openai or "http://localhost:8080",
@@ -111,21 +138,34 @@ def _run_ui_only(args, api_url, api_backend, lang, startup_model) -> None:
 
 
 def _run_api_only(args, api_url, api_backend) -> None:
-    import uvicorn
-    from .api import create_app
-    print(f"vyrii API -> http://localhost:{args.api}")
+    try:
+        import uvicorn
+        from .api import create_app
+    except ImportError:
+        print("FastAPI server requires: pip install vyrii[api]")
+        raise SystemExit(1)
+    port = args.api or 5001
+    print(f"vyrii FastAPI -> http://localhost:{port}")
     print(f"  backend : {api_url}  ({api_backend})")
     print(f"  auth    : {'on' if args.auth else 'off'}")
-    print(f"  docs    : http://localhost:{args.api}/docs")
+    print(f"  docs    : http://localhost:{port}/docs")
     uvicorn.run(create_app(base_url=api_url, backend=api_backend, auth=args.auth),
-                host=args.bind, port=args.api)
+                host=args.bind, port=port)
 
 
 def _run_both(args, api_url, api_backend, lang, startup_model) -> None:
     import threading
-    import uvicorn
-    from .api import create_app
-    from .app import build_app, _vyrii_auth
+    try:
+        import uvicorn
+        from .api import create_app
+    except ImportError:
+        print("FastAPI server requires: pip install vyrii[api]")
+        raise SystemExit(1)
+    try:
+        from .app import build_app, _vyrii_auth
+    except ImportError:
+        print("Gradio UI requires: pip install vyrii[gradio]")
+        raise SystemExit(1)
 
     gradio_app = build_app(
         ollama_url=api_url,
@@ -144,11 +184,12 @@ def _run_both(args, api_url, api_backend, lang, startup_model) -> None:
 
     t = threading.Thread(target=_launch_gradio, daemon=True)
     t.start()
+    port = args.api or 5001
     print(f"vyrii UI  -> http://localhost:{args.ui}")
-    print(f"vyrii API -> http://localhost:{args.api}  (docs: /docs)")
+    print(f"vyrii API -> http://localhost:{port}  (docs: /docs)")
     print(f"  auth    : {'on' if args.auth else 'off'}")
     uvicorn.run(create_app(base_url=api_url, backend=api_backend, auth=args.auth),
-                host=args.bind, port=args.api)
+                host=args.bind, port=port)
 
 
 if __name__ == "__main__":
