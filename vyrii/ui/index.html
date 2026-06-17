@@ -6,6 +6,7 @@
 <title>vyrii</title>
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css">
 <link rel="stylesheet" id="theme-link" href="themes/ocean.css">
 </head>
 <body>
@@ -140,8 +141,16 @@
             <span class="status-dot"></span>
             <span data-i18n="generating">Generating…</span>
           </span>
+          <span id="ctx-indicator" class="ctx-indicator" onclick="toggleCtxMode()" title="Click to switch smart/fixed"></span>
+          <input type="number" id="ctx-fixed-input" class="ctx-fixed-input" min="1024" step="1024" value="4096"
+            style="display:none" onchange="state.fixedCtx=+this.value;updateCtxIndicator()">
+          <label class="chk-label" style="font-size:12px;gap:4px">
+            <input type="checkbox" id="chk-thinking" onchange="state.showThinking=this.checked;renderChatMessages()">
+            <span data-i18n="show_thinking">Thinking</span>
+          </label>
           <button class="btn btn-ghost btn-sm" onclick="toggleHistory()" data-i18n="history">History</button>
           <button class="btn btn-ghost btn-sm" onclick="newChat()" data-i18n="new_chat">New chat</button>
+          <button class="btn btn-ghost btn-sm" id="btn-compact" onclick="compactChat()" data-i18n="compact_chat">Compact</button>
           <button class="btn btn-ghost btn-sm" onclick="clearChat()" data-i18n="clear">Clear</button>
         </div>
       </div>
@@ -1481,6 +1490,10 @@ Examples:
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: false, theme: 'dark' });</script>
 <script src="app.js"></script>
 </body>
 </html>

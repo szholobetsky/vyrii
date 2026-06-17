@@ -37,7 +37,9 @@ def _conn() -> sqlite3.Connection:
 
 
 def _safe_title(title: str) -> str:
-    return re.sub(r'[\\/:*?"<>|]', "_", title)[:60].strip() or "chat"
+    s = title.replace("\n", " ").replace("\r", " ")
+    s = re.sub(r'[\x00-\x1f\\/:*?"<>|]', "_", s)
+    return s[:60].strip() or "chat"
 
 
 def _md_path(chat_id: int, title: str) -> Path:

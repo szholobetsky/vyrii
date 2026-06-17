@@ -359,6 +359,7 @@ a:hover { text-decoration: underline; }
 .msg-avatar.usr { background: var(--surface); }
 
 .msg-wrap {
+  position: relative;
   max-width: 72%;
   display: flex;
   flex-direction: column;
@@ -414,6 +415,101 @@ a:hover { text-decoration: underline; }
 .bubble ul, .bubble ol { padding-left: 18px; margin: 4px 0; }
 .bubble h1, .bubble h2, .bubble h3 { margin: 8px 0 4px; font-size: 15px; }
 .bubble strong { font-weight: 600; }
+
+.msg-copy {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  background: var(--surface, #1e3040);
+  border: 1px solid var(--border, #2a4050);
+  border-radius: 4px;
+  color: var(--text-muted, #8aa);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 6px;
+  opacity: 0;
+  transition: opacity .2s;
+}
+.ctx-indicator {
+  font-size: 11px;
+  color: var(--text-muted, #8aa);
+  font-family: monospace;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255,255,255,.05);
+}
+.ctx-indicator:empty { display: none; }
+.ctx-indicator { cursor: pointer; }
+.ctx-fixed-input {
+  width: 64px;
+  font-size: 11px;
+  font-family: monospace;
+  padding: 1px 4px;
+  background: var(--surface, #1e3040);
+  border: 1px solid var(--border, #2a4050);
+  border-radius: 4px;
+  color: var(--text, #d8dee9);
+}
+
+.msg-wrap:hover .msg-copy { opacity: 1; }
+
+.katex-wrap {
+  position: relative;
+}
+.katex-display-wrap {
+  display: block;
+}
+.katex-copy {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  z-index: 2;
+  background: var(--surface, #1e3040);
+  border: 1px solid var(--border, #2a4050);
+  border-radius: 4px;
+  color: var(--text-muted, #8aa);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 1px 4px;
+  opacity: 0;
+  transition: opacity .2s;
+}
+.katex-wrap:hover .katex-copy { opacity: 1; }
+
+.mermaid-wrap {
+  position: relative;
+}
+.mermaid-copy {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 2;
+  background: var(--surface, #1e3040);
+  border: 1px solid var(--border, #2a4050);
+  border-radius: 4px;
+  color: var(--text-muted, #8aa);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+  opacity: 0;
+  transition: opacity .2s;
+}
+.mermaid-wrap:hover .mermaid-copy { opacity: 1; }
+
+.thinking-block {
+  margin: 6px 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--accent, #5fb4b4);
+  background: rgba(255,255,255,.04);
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--text-muted, #8aa);
+}
+.thinking-block summary {
+  cursor: pointer;
+  font-style: italic;
+  opacity: .8;
+}
 
 .msg-ts {
   font-size: 10px;

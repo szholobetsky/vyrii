@@ -32,7 +32,7 @@ from flask_cors import CORS
 
 from .engine import (
     BACKEND_OLLAMA, DEFAULT_OLLAMA,
-    complete, list_models, stream_chat,
+    complete, list_models, smart_ctx, stream_chat,
 )
 
 
@@ -101,9 +101,11 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         cid = f"chatcmpl-{uuid.uuid4().hex[:8]}"
         created = int(time.time())
 
+        num_ctx = body.get("num_ctx") or smart_ctx(messages)
+
         if do_stream:
             def _gen():
-                for chunk in stream_chat(messages, model, base_url, backend=backend):
+                for chunk in stream_chat(messages, model, base_url, num_ctx=num_ctx, backend=backend):
                     data = {
                         "id": cid, "object": "chat.completion.chunk",
                         "created": created, "model": model,
@@ -120,7 +122,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
 
             return Response(stream_with_context(_gen()), mimetype="text/event-stream")
 
-        full = complete(messages, model, base_url, backend=backend)
+        full = complete(messages, model, base_url, num_ctx=num_ctx, backend=backend)
         return jsonify({
             "id": cid, "object": "chat.completion",
             "created": created, "model": model,
@@ -556,6 +558,25 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
             return jsonify({"error": "not found"}), 404
         return jsonify({"id": chat_id, "title": row[0], "created_at": row[1],
                         "messages": _h.get_messages(chat_id)})
+
+    @app.route("/vyrii/compact", methods=["POST"])
+    def compact_chat():
+        body = request.get_json(silent=True) or {}
+        messages = body.get("messages", [])
+        model = body.get("model") or _default_model()
+        if not messages:
+            return jsonify({"summary": "", "error": "no messages"})
+        history_text = "\n\n".join(
+            f"{'User' if m['role'] == 'user' else 'Assistant'}: {m.get('content', '')}"
+            for m in messages if m.get("content")
+        )
+        summary = complete(
+            [{"role": "user", "content":
+              "Summarize this conversation concisely, preserving all key "
+              "information, decisions, and context:\n\n" + history_text}],
+            model, base_url, backend=backend,
+        )
+        return jsonify({"summary": summary})
 
     @app.route("/vyrii/history/search", methods=["GET"])
     def hist_search():

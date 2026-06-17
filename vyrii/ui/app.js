@@ -73,7 +73,8 @@ const I18N = {
     tab_files: 'Files', tab_webcrawl: 'WebCrawl', tab_webanalys: 'WebAnalys',
     tab_deepagent: 'DeepAgent', tab_scan: 'Scan', tab_webindex: 'WebIndex',
     label_model: 'Model', label_theme: 'Theme', label_lang: 'Language',
-    new_chat: 'New chat', clear: 'Clear', send: 'Send', stop: 'Stop',
+    new_chat: 'New chat', compact_chat: 'Compact', clear: 'Clear', send: 'Send', stop: 'Stop',
+    compacting: 'Compacting…', compacted_ok: 'Conversation compacted',
     history: 'History', hist_search_ph: 'Search conversations…',
     hist_empty: 'No conversations yet',
     generating: 'Generating…', chat_empty: 'Start a conversation…',
@@ -114,6 +115,8 @@ const I18N = {
     login_btn: 'Log in', login_error: 'Invalid credentials', logout_btn: 'Log out',
     error_prefix: 'Error: ', no_model: 'No model selected',
     api_error: 'API error',
+    show_thinking: 'Thinking',
+    thinking_label: 'Thinking…',
     // RAG
     tab_rag: 'RAG', rag_project: 'Project', rag_select_project: '— select project —',
     rag_query_ph: 'What are you looking for?', rag_results: 'Results',
@@ -214,7 +217,8 @@ const I18N = {
     tab_files: 'Файли', tab_webcrawl: 'ВебКраулер', tab_webanalys: 'ВебАналіз',
     tab_deepagent: 'Глибокий Пошук', tab_scan: 'Скан', tab_webindex: 'ВебІндекс',
     label_model: 'Модель', label_theme: 'Тема', label_lang: 'Мова',
-    new_chat: 'Новий чат', clear: 'Очистити', send: 'Надіслати', stop: 'Стоп',
+    new_chat: 'Новий чат', compact_chat: 'Компакт', clear: 'Очистити', send: 'Надіслати', stop: 'Стоп',
+    compacting: 'Ущільнення…', compacted_ok: 'Розмову ущільнено',
     history: 'Історія', hist_search_ph: 'Пошук розмов…',
     hist_empty: 'Розмов ще немає',
     generating: 'Генерація…', chat_empty: 'Почніть розмову…',
@@ -255,6 +259,8 @@ const I18N = {
     login_btn: 'Увійти', login_error: 'Невірні дані', logout_btn: 'Вийти',
     error_prefix: 'Помилка: ', no_model: 'Модель не обрана',
     api_error: 'Помилка API',
+    show_thinking: 'Думки',
+    thinking_label: 'Міркування…',
     // RAG
     tab_rag: 'RAG', rag_project: 'Проект', rag_select_project: '— оберіть проект —',
     rag_query_ph: 'Що шукаєте?', rag_results: 'Результати',
@@ -348,7 +354,8 @@ const I18N = {
     tab_files: 'Dateien', tab_webcrawl: 'WebCrawl', tab_webanalys: 'WebAnalyse',
     tab_deepagent: 'DeepAgent', tab_scan: 'Scan', tab_webindex: 'WebIndex',
     label_model: 'Modell', label_theme: 'Design', label_lang: 'Sprache',
-    new_chat: 'Neuer Chat', clear: 'Leeren', send: 'Senden', stop: 'Stop',
+    new_chat: 'Neuer Chat', compact_chat: 'Kompakt', clear: 'Leeren', send: 'Senden', stop: 'Stop',
+    compacting: 'Verdichtung…', compacted_ok: 'Gespräch verdichtet',
     history: 'Verlauf', hist_search_ph: 'Gespräche suchen…',
     hist_empty: 'Noch keine Gespräche',
     generating: 'Generiere…', chat_empty: 'Gespräch beginnen…',
@@ -389,6 +396,7 @@ const I18N = {
     login_btn: 'Anmelden', login_error: 'Ungültige Anmeldedaten', logout_btn: 'Abmelden',
     error_prefix: 'Fehler: ', no_model: 'Kein Modell ausgewählt',
     api_error: 'API-Fehler',
+    show_thinking: 'Denken', thinking_label: 'Denkt nach…',
     tab_rag: 'RAG', rag_project: 'Projekt', rag_select_project: '— Projekt wählen —',
     rag_query_ph: 'Wonach suchen Sie?', rag_results: 'Ergebnisse',
     rag_sources: 'Quellen', rag_llm_answer: 'LLM-Antwort',
@@ -483,7 +491,8 @@ const I18N = {
     tab_files: 'Fichiers', tab_webcrawl: 'WebCrawl', tab_webanalys: 'WebAnalyse',
     tab_deepagent: 'DeepAgent', tab_scan: 'Scan', tab_webindex: 'WebIndex',
     label_model: 'Modèle', label_theme: 'Thème', label_lang: 'Langue',
-    new_chat: 'Nouveau chat', clear: 'Effacer', send: 'Envoyer', stop: 'Stop',
+    new_chat: 'Nouveau chat', compact_chat: 'Compacter', clear: 'Effacer', send: 'Envoyer', stop: 'Stop',
+    compacting: 'Compactage…', compacted_ok: 'Conversation compactée',
     history: 'Historique', hist_search_ph: 'Rechercher les conversations…',
     hist_empty: 'Aucune conversation',
     generating: 'Génération…', chat_empty: 'Commencez une conversation…',
@@ -524,6 +533,7 @@ const I18N = {
     login_btn: 'Connexion', login_error: 'Identifiants invalides', logout_btn: 'Déconnexion',
     error_prefix: 'Erreur : ', no_model: 'Aucun modèle sélectionné',
     api_error: 'Erreur API',
+    show_thinking: 'Réflexion', thinking_label: 'Réfléchit…',
     tab_rag: 'RAG', rag_project: 'Projet', rag_select_project: '— sélectionner un projet —',
     rag_query_ph: 'Que recherchez-vous ?', rag_results: 'Résultats',
     rag_sources: 'Sources', rag_llm_answer: 'Réponse LLM',
@@ -613,7 +623,8 @@ const I18N = {
     tab_files: 'Archivos', tab_webcrawl: 'WebCrawl', tab_webanalys: 'WebAnálisis',
     tab_deepagent: 'DeepAgent', tab_scan: 'Escanear', tab_webindex: 'WebÍndice',
     label_model: 'Modelo', label_theme: 'Tema', label_lang: 'Idioma',
-    new_chat: 'Nuevo chat', clear: 'Limpiar', send: 'Enviar', stop: 'Parar',
+    new_chat: 'Nuevo chat', compact_chat: 'Compactar', clear: 'Limpiar', send: 'Enviar', stop: 'Parar',
+    compacting: 'Compactando…', compacted_ok: 'Conversación compactada',
     history: 'Historial', hist_search_ph: 'Buscar conversaciones…',
     hist_empty: 'Sin conversaciones aún',
     generating: 'Generando…', chat_empty: 'Comience una conversación…',
@@ -654,6 +665,7 @@ const I18N = {
     login_btn: 'Iniciar sesión', login_error: 'Credenciales inválidas', logout_btn: 'Cerrar sesión',
     error_prefix: 'Error: ', no_model: 'Sin modelo seleccionado',
     api_error: 'Error de API',
+    show_thinking: 'Pensando', thinking_label: 'Pensando…',
     tab_rag: 'RAG', rag_project: 'Proyecto', rag_select_project: '— seleccionar proyecto —',
     rag_query_ph: '¿Qué está buscando?', rag_results: 'Resultados',
     rag_sources: 'Fuentes', rag_llm_answer: 'Respuesta LLM',
@@ -743,7 +755,8 @@ const I18N = {
     tab_files: 'Arquivos', tab_webcrawl: 'WebCrawl', tab_webanalys: 'WebAnálise',
     tab_deepagent: 'DeepAgent', tab_scan: 'Varredura', tab_webindex: 'WebÍndice',
     label_model: 'Modelo', label_theme: 'Tema', label_lang: 'Idioma',
-    new_chat: 'Novo chat', clear: 'Limpar', send: 'Enviar', stop: 'Parar',
+    new_chat: 'Novo chat', compact_chat: 'Compactar', clear: 'Limpar', send: 'Enviar', stop: 'Parar',
+    compacting: 'Compactando…', compacted_ok: 'Conversa compactada',
     history: 'Histórico', hist_search_ph: 'Pesquisar conversas…',
     hist_empty: 'Nenhuma conversa ainda',
     generating: 'Gerando…', chat_empty: 'Inicie uma conversa…',
@@ -784,6 +797,7 @@ const I18N = {
     login_btn: 'Entrar', login_error: 'Credenciais inválidas', logout_btn: 'Sair',
     error_prefix: 'Erro: ', no_model: 'Nenhum modelo selecionado',
     api_error: 'Erro de API',
+    show_thinking: 'Pensamento', thinking_label: 'Pensando…',
     tab_rag: 'RAG', rag_project: 'Projeto', rag_select_project: '— selecionar projeto —',
     rag_query_ph: 'O que você está procurando?', rag_results: 'Resultados',
     rag_sources: 'Fontes', rag_llm_answer: 'Resposta LLM',
@@ -882,6 +896,9 @@ const state = {
   savedCount:  0,     // how many chatMessages are already persisted
   fileViewRaw: '',    // raw content of currently viewed file
   selectedFile: null,
+  showThinking: false,
+  smartCtx: true,
+  fixedCtx: 4096,
 };
 
 // ── VIEWPORT HEIGHT (keeps --app-h = actual visible height on mobile) ─────
@@ -898,6 +915,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   applyLang(state.lang);
   loadThemes();
   setupTabNav();
+
+  // Shift+Enter submits on all tabs (find nearest btn-primary in same panel)
+  document.addEventListener('keydown', e => {
+    if (!(e.key === 'Enter' && e.shiftKey)) return;
+    const ta = e.target;
+    if (!(ta.tagName === 'TEXTAREA' || ta.tagName === 'INPUT')) return;
+    if (ta.id === 'chat-input') return; // chat has its own handler
+    const panel = ta.closest('.tab-panel, .subtab-panel, .form-row')
+               || ta.closest('.panel-body');
+    if (!panel) return;
+    const btn = panel.querySelector('.btn-primary');
+    if (btn) { e.preventDefault(); btn.click(); }
+  });
   // Probe auth: if 401 and no stored creds, show login overlay
   const probe = await fetch('/v1/models').catch(() => ({ status: 0 }));
   if (probe.status !== 401) {
@@ -1039,9 +1069,43 @@ function switchTab(tab) {
 function md(text) {
   if (!text) return '';
 
-  // Step 1 — extract code blocks before escaping so their content is safe
+  // Handle <think>...</think> blocks (chain-of-thought from Qwen/DeepSeek)
+  if (state.showThinking) {
+    text = text.replace(/<think>([\s\S]*?)<\/think>/gi,
+      (_, inner) => `\n<details class="thinking-block" open><summary>${t('thinking_label')}</summary>\n\n${inner.trim()}\n\n</details>\n`);
+  } else if (state.streaming && /<think>(?![\s\S]*<\/think>)/i.test(text)) {
+    text = text.replace(/<think>([\s\S]*)$/i,
+      (_, inner) => `\n<details class="thinking-block" open><summary>${t('thinking_label')}</summary>\n\n${inner.trim()}\n\n</details>\n`);
+  } else {
+    text = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
+  }
+
+  // Step 0 — extract math blocks before anything else (LaTeX / KaTeX)
+  const mathBlocks = [];
+  // display math: $$ ... $$ or \[ ... \]
+  let s = text.replace(/\$\$([\s\S]*?)\$\$|\\\[([\s\S]*?)\\\]/g, (m, a, b) => {
+    const idx = mathBlocks.length;
+    mathBlocks.push({ display: true, tex: (a ?? b).trim() });
+    return `\x00MB${idx}\x00`;
+  });
+  // inline math: $ ... $ (not $$) or \( ... \)
+  s = s.replace(/\$([^\$\n]+?)\$|\\\((.+?)\\\)/g, (m, a, b) => {
+    const idx = mathBlocks.length;
+    mathBlocks.push({ display: false, tex: (a ?? b).trim() });
+    return `\x00MB${idx}\x00`;
+  });
+
+  // Step 1a — extract mermaid blocks
+  const mermaidBlocks = [];
+  s = s.replace(/```mermaid\n?([\s\S]*?)```/g, (_, c) => {
+    const idx = mermaidBlocks.length;
+    mermaidBlocks.push(c.trim());
+    return `\x00MM${idx}\x00`;
+  });
+
+  // Step 1b — extract remaining code blocks before escaping
   const codeBlocks = [];
-  let s = text.replace(/```[\w]*\n?([\s\S]*?)```/g, (_, c) => {
+  s = s.replace(/```[\w]*\n?([\s\S]*?)```/g, (_, c) => {
     const idx = codeBlocks.length;
     codeBlocks.push(`<pre><code>${escHtml(c.trim())}</code></pre>`);
     return `\x00CB${idx}\x00`;
@@ -1075,7 +1139,50 @@ function md(text) {
   // Step 8 — restore code blocks
   s = s.replace(/\x00CB(\d+)\x00/g, (_, i) => codeBlocks[+i]);
 
+  // Step 9 — render math blocks via KaTeX
+  s = s.replace(/\x00MB(\d+)\x00/g, (_, i) => {
+    const mb = mathBlocks[+i];
+    const encoded = mb.tex.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    const tag = mb.display ? 'div' : 'span';
+    try {
+      const html = katex.renderToString(mb.tex, { displayMode: mb.display, throwOnError: false });
+      return `<${tag} class="katex-wrap${mb.display ? ' katex-display-wrap' : ''}" data-tex="${encoded}">${html}<button class="katex-copy" onclick="copyKatexSrc(this)" title="Copy LaTeX">&#128203;</button></${tag}>`;
+    } catch { return escHtml(mb.tex); }
+  });
+
+  // Step 10 — insert mermaid placeholders (rendered async after innerHTML)
+  s = s.replace(/\x00MM(\d+)\x00/g, (_, i) => {
+    const raw = mermaidBlocks[+i];
+    const encoded = raw.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    return `<div class="mermaid-wrap"><button class="mermaid-copy" onclick="copyMermaidSrc(this)" title="Copy source">&#128203;</button><pre class="mermaid" data-src="${encoded}">${escHtml(raw)}</pre></div>`;
+  });
+
   return s;
+}
+
+function copyMsgRaw(idx) {
+  const msg = state.chatMessages[idx];
+  if (!msg) return;
+  navigator.clipboard.writeText(msg.content).then(() => showToast(t('copied')));
+}
+
+function copyKatexSrc(btn) {
+  const wrap = btn.parentElement;
+  const src = wrap?.dataset.tex || '';
+  navigator.clipboard.writeText(src).then(() => showToast(t('copied')));
+}
+
+function copyMermaidSrc(btn) {
+  const pre = btn.parentElement.querySelector('pre.mermaid');
+  const src = pre?.dataset.src || pre?.textContent || '';
+  navigator.clipboard.writeText(src).then(() => showToast(t('copied')));
+}
+
+function renderMermaid(container) {
+  if (typeof mermaid === 'undefined') return;
+  const nodes = (container || document).querySelectorAll('pre.mermaid:not([data-processed])');
+  if (!nodes.length) return;
+  try { mermaid.run({ nodes }); } catch {}
 }
 
 function escHtml(s) {
@@ -1097,6 +1204,7 @@ function setResultMd(id, text) {
   const el = document.getElementById(id);
   if (!el) return;
   el.innerHTML = md(text);
+  renderMermaid(el);
 }
 
 function setResultLoading(id) {
@@ -1155,14 +1263,68 @@ function chatKeyDown(e) {
   // Enter alone → new line (default textarea behaviour, no override needed)
 }
 
+function updateCtxIndicator() {
+  const el = document.getElementById('ctx-indicator');
+  if (!el) return;
+  const total = state.chatMessages.reduce((s, m) => s + (m.content?.length || 0), 0);
+  const tokens = Math.max(1, Math.round(total / 3));
+  if (state.smartCtx) {
+    let ctx = 2048;
+    while (tokens >= ctx * 0.7) ctx += 2048;
+    el.textContent = `~${tokens} / ${ctx} auto`;
+  } else {
+    el.textContent = `~${tokens} / ${state.fixedCtx} fixed`;
+  }
+  const inp = document.getElementById('ctx-fixed-input');
+  if (inp) inp.style.display = state.smartCtx ? 'none' : '';
+}
+
+function toggleCtxMode() {
+  state.smartCtx = !state.smartCtx;
+  updateCtxIndicator();
+}
+
 function newChat() {
   state.chatMessages = [];
   state.chatId     = null;
   state.savedCount = 0;
   renderChatMessages();
+  updateCtxIndicator();
 }
 
 function clearChat() { newChat(); }
+
+async function compactChat() {
+  if (state.chatMessages.length < 2) return;
+  const model = getModel();
+  if (!model) { showToast(t('no_model')); return; }
+  const btn = document.getElementById('btn-compact');
+  if (btn) btn.disabled = true;
+  showToast(t('compacting'));
+  try {
+    const resp = await fetch('/vyrii/compact', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: state.chatMessages, model }),
+    });
+    const data = await resp.json();
+    if (!data.summary) { showToast(t('error_prefix') + (data.error || '?')); return; }
+    // start new chat with compact summary
+    state.chatMessages = [
+      { role: 'user',      content: '[Compacted conversation summary]\n\n' + data.summary },
+      { role: 'assistant', content: t('compacted_ok') },
+    ];
+    state.chatId     = null;
+    state.savedCount = 0;
+    renderChatMessages();
+    updateCtxIndicator();
+    showToast(t('compacted_ok'));
+  } catch (e) {
+    showToast(t('error_prefix') + e.message);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
 
 // ── CHAT HISTORY ──────────────────────────────────────
 function toggleHistory() {
@@ -1218,6 +1380,7 @@ async function loadHistoryChat(chatId) {
     state.chatId       = chatId;
     state.savedCount   = state.chatMessages.length;
     renderChatMessages();
+    updateCtxIndicator();
     document.getElementById('chat-hist-panel').classList.remove('open');
     const box = document.getElementById('chat-messages');
     if (box) box.scrollTop = box.scrollHeight;
@@ -1251,7 +1414,7 @@ function renderChatMessages() {
     const avatar  = isUser ? '👤' : '🤖';
     const cls     = isUser ? 'user' : 'asst';
     const name    = isUser ? 'You'  : 'Assistant';
-    const content = msg.role === 'user' ? escHtml(msg.content) : md(msg.content);
+    const content = md(msg.content);
     const cursor  = (!isUser && i === state.chatMessages.length - 1 && state.streaming)
       ? '<span class="cursor-blink"></span>' : '';
     return `
@@ -1260,9 +1423,11 @@ function renderChatMessages() {
         <div class="msg-wrap">
           <span class="msg-name">${name}</span>
           <div class="bubble">${content}${cursor}</div>
+          <button class="msg-copy" onclick="copyMsgRaw(${i})" title="${t('copy')}">&#128203;</button>
         </div>
       </div>`;
   }).join('');
+  renderMermaid(container);
   container.scrollTop = container.scrollHeight;
 }
 
@@ -1276,6 +1441,7 @@ function updateLastBubble() {
   const bubble = el.querySelector('.bubble');
   if (!bubble) return;
   bubble.innerHTML = md(last.content) + (state.streaming ? '<span class="cursor-blink"></span>' : '');
+  if (!state.streaming) renderMermaid(bubble);
   const container = document.getElementById('chat-messages');
   container.scrollTop = container.scrollHeight;
 }
@@ -1349,7 +1515,8 @@ async function sendChat() {
     const resp = await fetch('/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, messages: toSend, stream: true }),
+      body: JSON.stringify({ model, messages: toSend, stream: true,
+        ...(state.smartCtx ? {} : { num_ctx: state.fixedCtx }) }),
       signal: state.abortCtrl.signal,
     });
 
@@ -1395,6 +1562,7 @@ async function sendChat() {
       await _histSaveMsg('assistant', last.content);
       state.savedCount = state.chatMessages.length;
     }
+    updateCtxIndicator();
   }
 }
 
@@ -1873,11 +2041,12 @@ function _fileViewMode(mode) {
       box.style.maxHeight = '55vh';
       box.style.overflow  = 'auto';
       box.innerHTML = md(raw);
+      renderMermaid(box);
     } else if (ext === 'html' || ext === 'htm') {
       box.className = '';
       box.style.cssText = 'width:100%;margin-top:6px';
       const iframe = document.createElement('iframe');
-      iframe.setAttribute('sandbox', 'allow-same-origin allow-forms');
+      iframe.setAttribute('sandbox', 'allow-forms');
       iframe.style.cssText = 'width:100%;height:55vh;border:1px solid var(--border);border-radius:8px;background:#fff;display:block';
       iframe.srcdoc = raw;
       box.innerHTML = '';

@@ -754,7 +754,13 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
 
                     # main area
                     with gr.Column(scale=4):
-                        chatbot = gr.Chatbot(height=460, label="", buttons=["copy"])
+                        chatbot = gr.Chatbot(height=460, label="", buttons=["copy"],
+                            latex_delimiters=[
+                                {"left": "$$", "right": "$$", "display": True},
+                                {"left": "$", "right": "$", "display": False},
+                                {"left": "\\[", "right": "\\]", "display": True},
+                                {"left": "\\(", "right": "\\)", "display": False},
+                            ])
                         with gr.Row():
                             msg_in = gr.Textbox(
                                 placeholder=t["msg_in_placeholder"],
@@ -2780,7 +2786,13 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                         fi_view_code = gr.Code(language=None, lines=35,
                                                interactive=False)
                     with gr.Tab(t["files_rendered_tab"]):
-                        fi_view_render = gr.Markdown(value="")
+                        fi_view_render = gr.Markdown(value="",
+                            latex_delimiters=[
+                                {"left": "$$", "right": "$$", "display": True},
+                                {"left": "$", "right": "$", "display": False},
+                                {"left": "\\[", "right": "\\]", "display": True},
+                                {"left": "\\(", "right": "\\)", "display": False},
+                            ])
                         fi_view_html   = gr.HTML(value="", visible=False)
 
                 fi_download    = gr.DownloadButton("Download file", visible=False)
@@ -2812,7 +2824,13 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                         lang = _LMAP.get(ext, "")
                         code_upd = gr.Code(value=content, language=lang or None)
                         if ext in (".md", ".markdown"):
-                            rmd  = gr.Markdown(value=content)
+                            rmd  = gr.Markdown(value=content,
+                                latex_delimiters=[
+                                    {"left": "$$", "right": "$$", "display": True},
+                                    {"left": "$", "right": "$", "display": False},
+                                    {"left": "\\[", "right": "\\]", "display": True},
+                                    {"left": "\\(", "right": "\\)", "display": False},
+                                ])
                             rhtm = gr.HTML("", visible=False)
                         elif ext in (".html", ".htm"):
                             rmd  = gr.Markdown("", visible=False)
