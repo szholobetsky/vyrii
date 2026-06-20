@@ -39,6 +39,17 @@ from . import stats as _stats
 
 def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
                auth: bool = False) -> Flask:
+    try:
+        _cfg_boot = json.loads((pathlib.Path.home() / ".vyrii" / "config.json").read_text(encoding="utf-8"))
+    except Exception:
+        _cfg_boot = {}
+    base_url = _cfg_boot.get("saved_url") or base_url
+    _sb = (_cfg_boot.get("saved_backend") or "").lower()
+    if _sb in ("openai", "openai-compatible"):
+        backend = BACKEND_OPENAI
+    elif _sb in ("ollama",):
+        backend = BACKEND_OLLAMA
+
     app = Flask(__name__, static_folder=None)
     CORS(app)
 
