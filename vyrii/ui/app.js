@@ -109,14 +109,21 @@ const I18N = {
     mkdir_ph: 'folder/name', select_file: 'Select a file or folder',
     loading: 'Loading…',
     result_here: 'Result will appear here…',
-    copy: 'Copy', copied: 'Copied!', add_to_chat: 'Add to chat',
+    copy: 'Copy', copy_raw: 'Copy raw markdown', copy_fmt: 'Copy formatted', copied: 'Copied!', add_to_chat: 'Add to chat',
     ctx_received: 'Context received. What would you like to know?',
     ctx_added: 'Added to chat context',
     login_btn: 'Log in', login_error: 'Invalid credentials', logout_btn: 'Log out',
     error_prefix: 'Error: ', no_model: 'No model selected',
     api_error: 'API error',
-    show_thinking: 'Thinking',
+    show_thinking: 'Thinking', incognito: 'Incognito',
     thinking_label: 'Thinking…',
+    active_profile: 'Active profile', no_profile: '— none (local only) —',
+    stats_title: 'Backend Stats', stats_host: 'Host', stats_active: 'Active',
+    stats_idle: 'idle', stats_busy: 'busy',
+    queue_waiting: 'Waiting in queue...', retry_msg: 'Ask again',
+    settings_reserve: 'Reserve mode', reserve_till_response: 'Till end of response',
+    reserve_by_timer: 'By timer', lock_btn_lock: 'Locked', lock_btn_release: 'Released',
+    lock_busy: 'Host is locked', lock_no_remote: 'Select a remote model first',
     // RAG
     tab_rag: 'RAG', rag_project: 'Project', rag_select_project: '— select project —',
     rag_query_ph: 'What are you looking for?', rag_results: 'Results',
@@ -253,14 +260,21 @@ const I18N = {
     mkdir_ph: 'папка/назва', select_file: 'Оберіть файл або папку',
     loading: 'Завантаження…',
     result_here: 'Результат з\'явиться тут…',
-    copy: 'Копіювати', copied: 'Скопійовано!', add_to_chat: 'Додати в чат',
+    copy: 'Копіювати', copy_raw: 'Копіювати markdown', copy_fmt: 'Копіювати з форматуванням', copied: 'Скопійовано!', add_to_chat: 'Додати в чат',
     ctx_received: 'Контекст отримано. Що ви хочете дізнатися?',
     ctx_added: 'Додано в контекст чату',
     login_btn: 'Увійти', login_error: 'Невірні дані', logout_btn: 'Вийти',
     error_prefix: 'Помилка: ', no_model: 'Модель не обрана',
     api_error: 'Помилка API',
-    show_thinking: 'Думки',
+    show_thinking: 'Думки', incognito: 'Інкогніто',
     thinking_label: 'Міркування…',
+    active_profile: 'Активний профіль', no_profile: '— немає (лише локальні) —',
+    stats_title: 'Статистика бекендів', stats_host: 'Хост', stats_active: 'Активні',
+    stats_idle: 'вільний', stats_busy: 'зайнятий',
+    queue_waiting: 'Чекаю в черзі...', retry_msg: 'Запитати ще раз',
+    settings_reserve: 'Режим резервування', reserve_till_response: 'До кінця відповіді',
+    reserve_by_timer: 'За таймером', lock_btn_lock: 'Зайнято', lock_btn_release: 'Звільнено',
+    lock_busy: 'Хост зайнято', lock_no_remote: 'Оберіть віддалену модель',
     // RAG
     tab_rag: 'RAG', rag_project: 'Проект', rag_select_project: '— оберіть проект —',
     rag_query_ph: 'Що шукаєте?', rag_results: 'Результати',
@@ -390,13 +404,20 @@ const I18N = {
     mkdir_ph: 'ordner/name', select_file: 'Datei oder Ordner auswählen',
     loading: 'Laden…',
     result_here: 'Ergebnis erscheint hier…',
-    copy: 'Kopieren', copied: 'Kopiert!', add_to_chat: 'Zum Chat hinzufügen',
+    copy: 'Kopieren', copy_raw: 'Markdown kopieren', copy_fmt: 'Formatiert kopieren', copied: 'Kopiert!', add_to_chat: 'Zum Chat hinzufügen',
     ctx_received: 'Kontext empfangen. Was möchten Sie wissen?',
     ctx_added: 'Zum Chat-Kontext hinzugefügt',
     login_btn: 'Anmelden', login_error: 'Ungültige Anmeldedaten', logout_btn: 'Abmelden',
     error_prefix: 'Fehler: ', no_model: 'Kein Modell ausgewählt',
     api_error: 'API-Fehler',
-    show_thinking: 'Denken', thinking_label: 'Denkt nach…',
+    show_thinking: 'Denken', incognito: 'Inkognito', thinking_label: 'Denkt nach…',
+    active_profile: 'Aktives Profil', no_profile: '— keins (nur lokal) —',
+    stats_title: 'Backend-Statistik', stats_host: 'Host', stats_active: 'Aktiv',
+    stats_idle: 'frei', stats_busy: 'belegt',
+    queue_waiting: 'Warte in der Warteschlange...', retry_msg: 'Erneut fragen',
+    settings_reserve: 'Reservierungsmodus', reserve_till_response: 'Bis Antwortende',
+    reserve_by_timer: 'Nach Timer', lock_btn_lock: 'Gesperrt', lock_btn_release: 'Freigegeben',
+    lock_busy: 'Host ist gesperrt', lock_no_remote: 'Remote-Modell wählen',
     tab_rag: 'RAG', rag_project: 'Projekt', rag_select_project: '— Projekt wählen —',
     rag_query_ph: 'Wonach suchen Sie?', rag_results: 'Ergebnisse',
     rag_sources: 'Quellen', rag_llm_answer: 'LLM-Antwort',
@@ -527,13 +548,20 @@ const I18N = {
     mkdir_ph: 'dossier/nom', select_file: 'Sélectionner un fichier ou dossier',
     loading: 'Chargement…',
     result_here: 'Le résultat apparaîtra ici…',
-    copy: 'Copier', copied: 'Copié !', add_to_chat: 'Ajouter au chat',
+    copy: 'Copier', copy_raw: 'Copier le markdown', copy_fmt: 'Copier formaté', copied: 'Copié !', add_to_chat: 'Ajouter au chat',
     ctx_received: 'Contexte reçu. Que voulez-vous savoir ?',
     ctx_added: 'Ajouté au contexte du chat',
     login_btn: 'Connexion', login_error: 'Identifiants invalides', logout_btn: 'Déconnexion',
     error_prefix: 'Erreur : ', no_model: 'Aucun modèle sélectionné',
     api_error: 'Erreur API',
-    show_thinking: 'Réflexion', thinking_label: 'Réfléchit…',
+    show_thinking: 'Réflexion', incognito: 'Incognito', thinking_label: 'Réfléchit…',
+    active_profile: 'Profil actif', no_profile: '— aucun (local uniquement) —',
+    stats_title: 'Stats des backends', stats_host: 'Hôte', stats_active: 'Actifs',
+    stats_idle: 'libre', stats_busy: 'occupé',
+    queue_waiting: 'En attente...', retry_msg: 'Redemander',
+    settings_reserve: 'Mode de réservation', reserve_till_response: "Jusqu'à la fin de la réponse",
+    reserve_by_timer: 'Par minuterie', lock_btn_lock: 'Verrouillé', lock_btn_release: 'Libéré',
+    lock_busy: "L'hôte est verrouillé", lock_no_remote: 'Sélectionnez un modèle distant',
     tab_rag: 'RAG', rag_project: 'Projet', rag_select_project: '— sélectionner un projet —',
     rag_query_ph: 'Que recherchez-vous ?', rag_results: 'Résultats',
     rag_sources: 'Sources', rag_llm_answer: 'Réponse LLM',
@@ -659,13 +687,20 @@ const I18N = {
     mkdir_ph: 'carpeta/nombre', select_file: 'Seleccionar archivo o carpeta',
     loading: 'Cargando…',
     result_here: 'El resultado aparecerá aquí…',
-    copy: 'Copiar', copied: '¡Copiado!', add_to_chat: 'Añadir al chat',
+    copy: 'Copiar', copy_raw: 'Copiar markdown', copy_fmt: 'Copiar con formato', copied: '¡Copiado!', add_to_chat: 'Añadir al chat',
     ctx_received: 'Contexto recibido. ¿Qué desea saber?',
     ctx_added: 'Añadido al contexto del chat',
     login_btn: 'Iniciar sesión', login_error: 'Credenciales inválidas', logout_btn: 'Cerrar sesión',
     error_prefix: 'Error: ', no_model: 'Sin modelo seleccionado',
     api_error: 'Error de API',
-    show_thinking: 'Pensando', thinking_label: 'Pensando…',
+    show_thinking: 'Pensando', incognito: 'Incógnito', thinking_label: 'Pensando…',
+    active_profile: 'Perfil activo', no_profile: '— ninguno (solo local) —',
+    stats_title: 'Estadísticas de backends', stats_host: 'Host', stats_active: 'Activos',
+    stats_idle: 'libre', stats_busy: 'ocupado',
+    queue_waiting: 'Esperando en cola...', retry_msg: 'Preguntar de nuevo',
+    settings_reserve: 'Modo de reserva', reserve_till_response: 'Hasta fin de respuesta',
+    reserve_by_timer: 'Por temporizador', lock_btn_lock: 'Bloqueado', lock_btn_release: 'Liberado',
+    lock_busy: 'Host bloqueado', lock_no_remote: 'Seleccione un modelo remoto',
     tab_rag: 'RAG', rag_project: 'Proyecto', rag_select_project: '— seleccionar proyecto —',
     rag_query_ph: '¿Qué está buscando?', rag_results: 'Resultados',
     rag_sources: 'Fuentes', rag_llm_answer: 'Respuesta LLM',
@@ -791,13 +826,20 @@ const I18N = {
     mkdir_ph: 'pasta/nome', select_file: 'Selecionar arquivo ou pasta',
     loading: 'Carregando…',
     result_here: 'O resultado aparecerá aqui…',
-    copy: 'Copiar', copied: 'Copiado!', add_to_chat: 'Adicionar ao chat',
+    copy: 'Copiar', copy_raw: 'Copiar markdown', copy_fmt: 'Copiar formatado', copied: 'Copiado!', add_to_chat: 'Adicionar ao chat',
     ctx_received: 'Contexto recebido. O que você gostaria de saber?',
     ctx_added: 'Adicionado ao contexto do chat',
     login_btn: 'Entrar', login_error: 'Credenciais inválidas', logout_btn: 'Sair',
     error_prefix: 'Erro: ', no_model: 'Nenhum modelo selecionado',
     api_error: 'Erro de API',
-    show_thinking: 'Pensamento', thinking_label: 'Pensando…',
+    show_thinking: 'Pensamento', incognito: 'Anônimo', thinking_label: 'Pensando…',
+    active_profile: 'Perfil ativo', no_profile: '— nenhum (somente local) —',
+    stats_title: 'Estatísticas de backends', stats_host: 'Host', stats_active: 'Ativos',
+    stats_idle: 'livre', stats_busy: 'ocupado',
+    queue_waiting: 'Aguardando na fila...', retry_msg: 'Perguntar novamente',
+    settings_reserve: 'Modo de reserva', reserve_till_response: 'Até o fim da resposta',
+    reserve_by_timer: 'Por temporizador', lock_btn_lock: 'Bloqueado', lock_btn_release: 'Liberado',
+    lock_busy: 'Host bloqueado', lock_no_remote: 'Selecione um modelo remoto',
     tab_rag: 'RAG', rag_project: 'Projeto', rag_select_project: '— selecionar projeto —',
     rag_query_ph: 'O que você está procurando?', rag_results: 'Resultados',
     rag_sources: 'Fontes', rag_llm_answer: 'Resposta LLM',
@@ -899,6 +941,7 @@ const state = {
   showThinking: false,
   smartCtx: true,
   fixedCtx: 4096,
+  incognito: false,
 };
 
 // ── VIEWPORT HEIGHT (keeps --app-h = actual visible height on mobile) ─────
@@ -1005,18 +1048,39 @@ async function loadModels() {
   try {
     const res = await fetch('/v1/models');
     const data = await res.json();
-    const models = (data.data || []).map(m => m.id);
+    const items = data.data || [];
     const sel = document.getElementById('g-model');
-    sel.innerHTML = models.length
-      ? models.map(m => `<option value="${m}">${m}</option>`).join('')
-      : '<option value="">— no models —</option>';
 
-    // restore saved model
-    if (state.model && models.includes(state.model)) {
+    if (!items.length) {
+      sel.innerHTML = '<option value="">— no models —</option>';
+      return;
+    }
+
+    const groups = {};
+    for (const m of items) {
+      const g = m.group || 'local';
+      if (!groups[g]) groups[g] = [];
+      const label = m.id.includes('@') ? m.id.split('@')[0] : m.id;
+      groups[g].push({ id: m.id, label });
+    }
+
+    const keys = Object.keys(groups);
+    if (keys.length === 1) {
+      sel.innerHTML = groups[keys[0]]
+        .map(m => `<option value="${m.id}">${m.label}</option>`).join('');
+    } else {
+      sel.innerHTML = keys.map(g =>
+        `<optgroup label="${g}">${groups[g]
+          .map(m => `<option value="${m.id}">${m.label}</option>`).join('')}</optgroup>`
+      ).join('');
+    }
+
+    const allIds = items.map(m => m.id);
+    if (state.model && allIds.includes(state.model)) {
       sel.value = state.model;
-    } else if (models.length) {
-      state.model = models[0];
-      sel.value = models[0];
+    } else {
+      state.model = allIds[0];
+      sel.value = allIds[0];
     }
   } catch (e) {
     document.getElementById('g-model').innerHTML = '<option value="">— offline —</option>';
@@ -1030,6 +1094,105 @@ function onModelChange() {
 
 function getModel() {
   return document.getElementById('g-model').value || state.model;
+}
+
+// ── STATS POPUP ──────────────────────────────────────
+async function toggleStatsPopup() {
+  const popup = document.getElementById('stats-popup');
+  if (popup.style.display !== 'none') {
+    popup.style.display = 'none';
+    return;
+  }
+  try {
+    const res = await fetch('/vyrii/stats');
+    const data = await res.json();
+    const rows = (data.stats || []);
+    if (!rows.length) {
+      popup.innerHTML = `<div class="stats-empty">${t('stats_title')}: —</div>`;
+    } else {
+      const hdr = `<tr><th>${t('stats_host')}</th><th>${t('stats_active')}</th><th>1m</th><th>5m</th><th>15m</th><th></th></tr>`;
+      const body = rows.map(r => {
+        const busy = r.active > 0;
+        const badge = busy
+          ? `<span class="stats-badge busy">${t('stats_busy')}</span>`
+          : `<span class="stats-badge idle">${t('stats_idle')}</span>`;
+        return `<tr><td>${r.host}</td><td>${r.active}</td><td>${r.req_1m}</td><td>${r.req_5m}</td><td>${r.req_15m}</td><td>${badge}</td></tr>`;
+      }).join('');
+      popup.innerHTML = `<div class="stats-header">${t('stats_title')}</div><table class="stats-table"><thead>${hdr}</thead><tbody>${body}</tbody></table>`;
+    }
+    popup.style.display = 'block';
+  } catch (e) {
+    popup.innerHTML = `<div class="stats-empty">${t('error_prefix')}${e.message}</div>`;
+    popup.style.display = 'block';
+  }
+}
+
+document.addEventListener('click', (e) => {
+  const popup = document.getElementById('stats-popup');
+  if (popup && popup.style.display !== 'none' &&
+      !popup.contains(e.target) && !e.target.classList.contains('sf-stats-btn')) {
+    popup.style.display = 'none';
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const popup = document.getElementById('stats-popup');
+    if (popup) popup.style.display = 'none';
+  }
+});
+
+// ── LOCK / RESERVE ───────────────────────────────────
+function _currentHost() {
+  const model = getModel();
+  if (model.includes('@')) {
+    const rest = model.split('@')[1];
+    const m = rest.match(/(?:ollama|openai):\/\/(.+)/);
+    return m ? m[1] : '';
+  }
+  return '';
+}
+
+async function toggleLock() {
+  const host = _currentHost();
+  if (!host) { showToast(t('lock_no_remote')); return; }
+  try {
+    const info = await (await fetch('/vyrii/lock')).json();
+    const cur = (info.locks || {})[host];
+    const action = cur ? 'release' : 'lock';
+    const res = await fetch('/vyrii/lock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ host, action }),
+    });
+    const data = await res.json();
+    const btn = document.getElementById('lock-btn');
+    if (action === 'lock') {
+      if (data.ok) {
+        if (btn) btn.innerHTML = '&#x1F512;';
+        showToast(t('lock_btn_lock') + ': ' + host);
+      } else {
+        showToast(data.error || t('lock_busy'));
+      }
+    } else {
+      if (btn) btn.innerHTML = '&#x1F513;';
+      showToast(t('lock_btn_release') + ': ' + host);
+    }
+  } catch (e) {
+    showToast(t('error_prefix') + e.message);
+  }
+}
+
+// ── ACTIVE PROFILE (settings) ────────────────────────
+async function loadProfileOptions() {
+  const sel = document.getElementById('cfg-active-profile');
+  if (!sel) return;
+  try {
+    const res = await fetch('/vyrii/team/profiles');
+    const data = await res.json();
+    const profiles = data.profiles || [];
+    sel.innerHTML = `<option value="">${t('no_profile')}</option>` +
+      profiles.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
+  } catch { /* keep default option */ }
 }
 
 // ── TAB NAVIGATION ────────────────────────────────────
@@ -1163,7 +1326,43 @@ function md(text) {
 function copyMsgRaw(idx) {
   const msg = state.chatMessages[idx];
   if (!msg) return;
-  navigator.clipboard.writeText(msg.content).then(() => showToast(t('copied')));
+  navigator.clipboard.writeText(msg.content)
+    .then(() => showToast(t('copied')))
+    .catch(() => {
+      const ta = document.createElement('textarea');
+      ta.value = msg.content; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+      showToast(t('copied'));
+    });
+}
+
+function copyMsgFmt(idx) {
+  const el = document.querySelector(`#msg-${idx} .bubble`);
+  if (!el) return;
+  const html = el.innerHTML;
+  const plain = el.innerText;
+  if (navigator.clipboard && typeof ClipboardItem !== 'undefined') {
+    const item = new ClipboardItem({
+      'text/html':  new Blob([html],  { type: 'text/html' }),
+      'text/plain': new Blob([plain], { type: 'text/plain' })
+    });
+    navigator.clipboard.write([item])
+      .then(() => showToast(t('copied')))
+      .catch(() => _fallbackCopyFmt(el));
+  } else {
+    _fallbackCopyFmt(el);
+  }
+}
+
+function _fallbackCopyFmt(el) {
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  const sel = window.getSelection();
+  sel.removeAllRanges(); sel.addRange(range);
+  document.execCommand('copy');
+  sel.removeAllRanges();
+  showToast(t('copied'));
 }
 
 function copyKatexSrc(btn) {
@@ -1176,6 +1375,19 @@ function copyMermaidSrc(btn) {
   const pre = btn.parentElement.querySelector('pre.mermaid');
   const src = pre?.dataset.src || pre?.textContent || '';
   navigator.clipboard.writeText(src).then(() => showToast(t('copied')));
+}
+
+function retryMsg(idx) {
+  const msg = state.chatMessages[idx];
+  if (!msg || msg.role !== 'assistant' || state.streaming) return;
+  state.chatMessages.splice(idx, 1);
+  state.savedCount = Math.min(state.savedCount, idx);
+  renderChatMessages();
+  const prev = state.chatMessages[idx - 1];
+  if (prev && prev.role === 'user') {
+    document.getElementById('chat-input').value = prev.content;
+    sendChat();
+  }
 }
 
 function renderMermaid(container) {
@@ -1282,6 +1494,17 @@ function updateCtxIndicator() {
 function toggleCtxMode() {
   state.smartCtx = !state.smartCtx;
   updateCtxIndicator();
+}
+
+function toggleIncognito(on) {
+  state.incognito = on;
+  const label = document.querySelector('.chk-incognito');
+  if (label) label.style.color = on ? '#f5a623' : '';
+  if (on && state.chatId) {
+    fetch(`/vyrii/history/chats/${state.chatId}`, { method: 'DELETE' }).catch(() => {});
+    state.chatId = null;
+    state.savedCount = 0;
+  }
 }
 
 function newChat() {
@@ -1423,7 +1646,11 @@ function renderChatMessages() {
         <div class="msg-wrap">
           <span class="msg-name">${name}</span>
           <div class="bubble">${content}${cursor}</div>
-          <button class="msg-copy" onclick="copyMsgRaw(${i})" title="${t('copy')}">&#128203;</button>
+          <div class="msg-copy-group">
+            <button class="msg-copy" onclick="copyMsgRaw(${i})" title="${t('copy_raw')}">MD</button>
+            <button class="msg-copy" onclick="copyMsgFmt(${i})" title="${t('copy_fmt')}">&#128203;</button>${
+              !isUser ? `<button class="msg-copy msg-retry" onclick="retryMsg(${i})" title="${t('retry_msg')}">&#x21bb;</button>` : ''}
+          </div>
         </div>
       </div>`;
   }).join('');
@@ -1499,14 +1726,14 @@ async function sendChat() {
   renderChatMessages();
   _setChatBusy(true);
 
-  // persist: create chat on first message, then save any unsaved messages
-  // (includes context injected via addToChat + this user message)
-  await _histEnsureChat(text);
-  const saveUpTo = state.chatMessages.length - 1; // all except empty assistant placeholder
-  for (let i = state.savedCount; i < saveUpTo; i++) {
-    await _histSaveMsg(state.chatMessages[i].role, state.chatMessages[i].content);
+  if (!state.incognito) {
+    await _histEnsureChat(text);
+    const saveUpTo = state.chatMessages.length - 1;
+    for (let i = state.savedCount; i < saveUpTo; i++) {
+      await _histSaveMsg(state.chatMessages[i].role, state.chatMessages[i].content);
+    }
+    state.savedCount = saveUpTo;
   }
-  state.savedCount = saveUpTo;
 
   // messages to send: all except the last empty assistant placeholder
   const toSend = state.chatMessages.slice(0, -1);
@@ -1538,8 +1765,19 @@ async function sendChat() {
         if (raw === '[DONE]') break;
         try {
           const obj   = JSON.parse(raw);
+          if (obj.waiting) {
+            state.chatMessages[state.chatMessages.length - 1].content =
+              `⏳ ${t('queue_waiting')} (${obj.position})`;
+            state._wasWaiting = true;
+            updateLastBubble();
+            continue;
+          }
           const chunk = obj.choices?.[0]?.delta?.content ?? '';
           if (chunk) {
+            if (state._wasWaiting) {
+              state.chatMessages[state.chatMessages.length - 1].content = '';
+              state._wasWaiting = false;
+            }
             state.chatMessages[state.chatMessages.length - 1].content += chunk;
             updateLastBubble();
           }
@@ -1556,9 +1794,8 @@ async function sendChat() {
     state.abortCtrl = null;
     _setChatBusy(false);
     updateLastBubble();
-    // save assistant response (keep partial if interrupted)
     const last = state.chatMessages[state.chatMessages.length - 1];
-    if (last && last.role === 'assistant' && last.content) {
+    if (!state.incognito && last && last.role === 'assistant' && last.content) {
       await _histSaveMsg('assistant', last.content);
       state.savedCount = state.chatMessages.length;
     }
@@ -2235,6 +2472,12 @@ async function loadSettings() {
     set('cfg-model',          cfg.saved_model || '');
     set('cfg-lang',           cfg.lang || 'en');
     set('cfg-auth-user',      cfg.auth_user || 'admin');
+    await loadProfileOptions();
+    set('cfg-active-profile', cfg.active_profile || '');
+    const rmode = cfg.reserve_mode || 'response';
+    const rEl = document.getElementById(rmode === 'timer' ? 'cfg-reserve-timer' : 'cfg-reserve-response');
+    if (rEl) rEl.checked = true;
+    set('cfg-reserve-timeout', cfg.reserve_timeout || 600);
   } catch { /* offline — keep defaults */ }
 }
 
@@ -2273,6 +2516,9 @@ async function saveSettings() {
     worker_timeout: +document.getElementById('cfg-worker-timeout').value      || null,
     saved_model:    document.getElementById('cfg-model').value.trim()         || null,
     lang:           document.getElementById('cfg-lang').value                 || null,
+    active_profile: document.getElementById('cfg-active-profile').value       || '',
+    reserve_mode:   document.querySelector('input[name="reserve-mode"]:checked')?.value || 'response',
+    reserve_timeout: +document.getElementById('cfg-reserve-timeout').value   || 600,
   };
   try {
     const res  = await fetch('/vyrii/settings', {
@@ -2287,6 +2533,7 @@ async function saveSettings() {
       setTimeout(() => { status.style.display = 'none'; }, 2500);
       // apply lang change immediately if changed
       if (payload.lang) setLang(payload.lang);
+      loadModels();
     } else {
       showToast(data.error || t('api_error'));
     }

@@ -5,7 +5,9 @@ Usage:
   vyrii -p 8002                                Flask on custom port
   vyrii --api                                  FastAPI on port 5001  (requires pip install vyrii[api])
   vyrii --ui                                   Gradio UI on port 4896 (requires pip install vyrii[gradio])
-  vyrii --ui 8001 --api 5001                   Gradio + FastAPI together
+  vyrii --ui --flask                           Gradio :4896 + Flask :5000 together
+  vyrii --ui 4896 --flask 8000                 Gradio + Flask on custom ports
+  vyrii --ui --api                             Gradio + FastAPI together
   vyrii --host localhost:11434                  custom Ollama host
   vyrii --host openai://localhost:1234          OpenAI-compatible backend
   vyrii --lang uk --model qwen2.5:7b            language + default model
@@ -61,6 +63,8 @@ def main() -> None:
                         help="Gradio UI port (default: 4896) — requires pip install vyrii[gradio]")
     parser.add_argument("--api", type=int, metavar="PORT", nargs="?", const=5001,
                         help="FastAPI port (default: 5001) — requires pip install vyrii[api]")
+    parser.add_argument("--flask", type=int, metavar="PORT", nargs="?", const=0, default=None,
+                        help="Run Flask UI alongside --ui (port from --flask PORT or -p, default: 5000)")
     parser.add_argument("--bind", default="0.0.0.0", metavar="ADDR",
                         help="Network interface to listen on (default: 0.0.0.0)")
     parser.add_argument("--auth", action="store_true",
@@ -77,8 +81,13 @@ def main() -> None:
                         help="Default model to select on startup")
     args = parser.parse_args()
 
+    # resolve --flask port: explicit value > -p > 5000
+    if args.flask is not None:
+        if args.flask == 0:
+            args.flask = args.port or 5000
+
     # default: Flask server if no mode flag given
-    if args.ui is None and args.api is None:
+    if args.ui is None and args.api is None and args.flask is None:
         if args.port is None:
             args.port = 5000
 
@@ -101,6 +110,8 @@ def main() -> None:
 
     if args.ui and args.api:
         _run_both(args, api_url, api_backend, lang, startup_model)
+    elif args.ui and args.flask:
+        _run_ui_flask(args, api_url, api_backend, lang, startup_model)
     elif args.api:
         _run_api_only(args, api_url, api_backend)
     elif args.ui:
@@ -191,6 +202,47 @@ def _run_both(args, api_url, api_backend, lang, startup_model) -> None:
     print(f"  auth    : {'on' if args.auth else 'off'}")
     uvicorn.run(create_app(base_url=api_url, backend=api_backend, auth=args.auth),
                 host=args.bind, port=port)
+
+
+def _run_ui_flask(args, api_url, api_backend, lang, startup_model) -> None:
+    import threading
+    try:
+        from .flask_api import create_app
+    except ImportError:
+        print("Flask not found — run: pip install vyrii")
+        raise SystemExit(1)
+    try:
+        from .app import build_app, _vyrii_auth
+    except ImportError:
+        print("Gradio UI requires: pip install vyrii[gradio]")
+        raise SystemExit(1)
+
+    gradio_app = build_app(
+        ollama_url=api_url,
+        openai_url=args.openai or "http://localhost:8080",
+        lang=lang,
+        startup_model=startup_model,
+    )
+
+    def _launch_gradio():
+        gradio_app.launch(
+            server_name=args.bind, server_port=args.ui,
+            prevent_thread_lock=True,
+            auth=_vyrii_auth if args.auth else None,
+            theme=getattr(gradio_app, "_vyrii_theme", None),
+        )
+
+    t = threading.Thread(target=_launch_gradio, daemon=True)
+    t.start()
+
+    flask_port = args.flask
+    flask_app = create_app(base_url=api_url, backend=api_backend, auth=args.auth)
+    print(f"vyrii Flask -> http://localhost:{flask_port}  (UI: /ui/)")
+    print(f"vyrii Gradio -> http://localhost:{args.ui}")
+    print(f"  backend : {api_url}  ({api_backend})")
+    print(f"  auth    : {'on' if args.auth else 'off'}")
+    from waitress import serve
+    serve(flask_app, host=args.bind, port=flask_port, threads=8)
 
 
 if __name__ == "__main__":

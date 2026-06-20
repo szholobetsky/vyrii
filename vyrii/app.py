@@ -163,13 +163,21 @@ def _rag_tab_ask(query: str, rag_full: str, model: str, url: str,
     if not (rag_full or "").strip():
         yield "_Run a search first._", rag_full or ""
         return
+    from .engine import complete as _cmp, parse_model_spec as _pms
+    from . import stats as _rag_stats
+    _m, _u, _b = _pms(model)
+    _host = (_u or url).replace("http://", "").replace("https://", "")
+    for pos in _rag_stats.wait_for_host(_host):
+        yield f"_⏳ Waiting in queue... (position {pos})_", rag_full
     yield "_Thinking..._", rag_full
-    from .engine import complete as _cmp
-    answer = _cmp(
-        [{"role": "user",
-          "content": f"{rag_full}\n\n---\n\nQuestion: {query}\n\nAnswer based on the sources above."}],
-        model, url, backend=_backend_key(backend_label), timeout=int(timeout),
-    )
+    try:
+        answer = _cmp(
+            [{"role": "user",
+              "content": f"{rag_full}\n\n---\n\nQuestion: {query}\n\nAnswer based on the sources above."}],
+            _m, _u or url, backend=_b or _backend_key(backend_label), timeout=int(timeout),
+        )
+    finally:
+        _rag_stats.release_host_sem(_host)
     updated = rag_full + f"\n\n---\n\n**LLM Answer:**\n\n{answer}"
     yield answer, updated
 
@@ -180,18 +188,26 @@ def _add_to_chat(content, sources, is_new, mode, n_tokens, display_mode,
     """Handler for the 'Add to chat' panel confirm button."""
     import gradio as _gr
     from . import history as _hist_atc
-    from .engine import complete as _complete_atc, smart_ctx as _sctx_atc
+    from .engine import complete as _complete_atc, smart_ctx as _sctx_atc, parse_model_spec as _pms_atc
+    from . import stats as _atc_stats
+    _m, _u, _b = _pms_atc(model)
     content = (content or "").strip()
     if not content:
         return (messages, cid, ctx, f"ctx: {ctx}", hidden_ctx,
                 _gr.update(), _gr.update(visible=False))
 
+    _host = (_u or url).replace("http://", "").replace("https://", "")
     if mode == "summary":
-        processed = _complete_atc(
-            [{"role": "user",
-              "content": f"Summarize this concisely in 2-3 paragraphs:\n\n{content}"}],
-            model, url, backend=_backend_key(backend_label), timeout=int(timeout),
-        )
+        for _ in _atc_stats.wait_for_host(_host):
+            pass
+        try:
+            processed = _complete_atc(
+                [{"role": "user",
+                  "content": f"Summarize this concisely in 2-3 paragraphs:\n\n{content}"}],
+                _m, _u or url, backend=_b or _backend_key(backend_label), timeout=int(timeout),
+            )
+        finally:
+            _atc_stats.release_host_sem(_host)
     elif mode == "last_n":
         chars = int(n_tokens) * 3
         processed = content[-chars:]
@@ -587,8 +603,9 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
     except ImportError:
         raise ImportError("Gradio not installed.  pip install gradio")
 
-    from .engine import list_models, stream_chat, smart_ctx, complete, CTX_START
+    from .engine import list_models, stream_chat, smart_ctx, complete, CTX_START, parse_model_spec
     from . import history as _hist
+    from . import stats as _stats
 
     _cfg_now        = _load_config()
     _theme_name     = _cfg_now.get("theme", "Monochrome")
@@ -597,7 +614,24 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
     _saved_backend  = _cfg_now.get("saved_backend", _BACKEND_OLLAMA)
     _restart_delay  = int(_cfg_now.get("restart_delay", 8))
 
-    _models = list_models(_saved_url, _backend_key(_saved_backend)) or ["gemma3:1b", "qwen3:1.7b"]
+    def _models_with_profile(url: str, bk: str) -> list[str]:
+        local = list_models(url, bk) or ["gemma3:1b"]
+        cfg = _load_config()
+        profile_name = cfg.get("active_profile", "")
+        if not profile_name:
+            return local
+        from . import parallel as _par_g
+        profile = _par_g.get_profile(profile_name)
+        if not profile:
+            return local
+        remote = []
+        for w in profile.get("workers", []):
+            h = w.get("host", "").replace("http://", "").replace("https://", "")
+            wb = "openai" if w.get("provider") == "openai" else "ollama"
+            remote.append(f"{w['model']}@{wb}://{h}")
+        return local + remote
+
+    _models = _models_with_profile(_saved_url, _backend_key(_saved_backend))
     _default_model = _models[0]
     _live_themes  = {
         "Monochrome": gr.themes.Monochrome(),
@@ -644,18 +678,28 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
             g_url    = gr.Textbox(
                 value=_saved_url,
                 label=t["url_label"],
-                scale=3,
+                scale=2,
             )
             _cli_or_saved = startup_model or _saved_model
             _init_model = _cli_or_saved if _cli_or_saved in _models else _default_model
             g_model  = gr.Dropdown(choices=_models, value=_init_model,
-                                   label=t["model_label"], scale=3)
-            with gr.Column(scale=1, min_width=160):
-                g_refresh  = gr.Button(t["refresh_models_btn"], size="sm")
-                g_thinking = gr.Checkbox(label=t["show_thinking_label"], value=False)
+                                   label=t["model_label"], scale=2)
+            with gr.Column(scale=0, min_width=180):
+                with gr.Row():
+                    g_lock    = gr.Button("\U0001f513", size="sm",
+                                          variant="secondary", min_width=36)
+                    g_stats_btn = gr.Button("\U0001f4ca", size="sm",
+                                          variant="secondary", min_width=36)
+                    g_refresh = gr.Button(t["refresh_models_btn"], size="sm",
+                                          min_width=80)
+                with gr.Row():
+                    g_thinking  = gr.Checkbox(label=t["show_thinking_label"], value=False)
+                    g_incognito = gr.Checkbox(label=t.get("incognito_label", "Incognito"), value=False)
+        g_lock_status = gr.Markdown("")
+        g_stats_panel = gr.Markdown("", visible=False)
 
         def _do_refresh_models(url: str, backend_label: str):
-            mods = list_models(url, _backend_key(backend_label)) or ["gemma3:1b"]
+            mods = _models_with_profile(url, _backend_key(backend_label))
             return gr.Dropdown(choices=mods, value=mods[0])
 
         def _on_backend_change(backend_label: str, current_url: str):
@@ -665,7 +709,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                 new_url = ollama_url
             else:
                 new_url = current_url
-            mods = list_models(new_url, _backend_key(backend_label)) or ["gemma3:1b"]
+            mods = _models_with_profile(new_url, _backend_key(backend_label))
             return gr.Textbox(value=new_url), gr.Dropdown(choices=mods, value=mods[0])
 
         g_backend.change(
@@ -675,6 +719,50 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
         )
         g_refresh.click(_do_refresh_models, inputs=[g_url, g_backend], outputs=[g_model])
 
+        def _do_toggle_lock(model, url, backend_label):
+            from .engine import parse_model_spec as _pms
+            _m, _u, _b = _pms(model)
+            use_url = _u or url
+            host = use_url.replace("http://", "").replace("https://", "")
+            if not host or not _u:
+                return "🔓 Lock", ""
+            info = _stats.get_lock_info(host)
+            if info:
+                _stats.release_host(host)
+                return "🔓 Lock", ""
+            cfg = _load_config()
+            mode = cfg.get("reserve_mode", "response")
+            tout = int(cfg.get("reserve_timeout", 600))
+            res = _stats.lock_host(host, "gradio", mode, tout)
+            if res.get("ok"):
+                return f"🔒 {host}", f"🔒 Locked: {host}"
+            return "🔓 Lock", res.get("error", "")
+
+        g_lock.click(_do_toggle_lock, inputs=[g_model, g_url, g_backend],
+                     outputs=[g_lock, g_lock_status])
+
+        def _do_toggle_stats(current_vis):
+            if current_vis:
+                return gr.update(value="", visible=False), False
+            stats = _stats.get_stats()
+            locks = _stats.get_all_locks()
+            if not stats:
+                return gr.update(value="_No activity yet._", visible=True), True
+            rows = []
+            for s in stats:
+                h = s["host"]
+                lock_info = locks.get(h)
+                if lock_info:
+                    lk = f"\U0001f512 {lock_info['locked_by']} ({lock_info.get('remaining', '?')}s)"
+                else:
+                    lk = "\U0001f513"
+                rows.append(f"| {h} | {s['active']} | {s['req_1m']} | {s['req_5m']} | {s['req_15m']} | {lk} |")
+            table = "| Host | Active | 1m | 5m | 15m | Lock |\n|---|---|---|---|---|---|\n" + "\n".join(rows)
+            return gr.update(value=table, visible=True), True
+
+        _stats_visible = gr.State(False)
+        g_stats_btn.click(_do_toggle_stats, inputs=[_stats_visible],
+                          outputs=[g_stats_panel, _stats_visible])
 
         # defined here so Chat/other tabs can reference it before Settings tab
         s_timeout = gr.Number(
@@ -830,17 +918,26 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                 def _compact_chat(messages, ctx, model, url, backend_label, timeout):
                     if not messages:
                         return messages, ctx, f"ctx: {ctx}"
+                    m_name, m_url, m_bk = parse_model_spec(model)
+                    use_url = m_url or url
+                    use_bk = m_bk or _backend_key(backend_label)
+                    _host = use_url.replace("http://", "").replace("https://", "")
+                    for _ in _stats.wait_for_host(_host):
+                        pass
                     history_text = "\n\n".join(
                         f"{'User' if m['role'] == 'user' else 'Assistant'}: {m.get('content', '')}"
                         for m in messages if m.get("content")
                     )
-                    summary = complete(
-                        [{"role": "user", "content":
-                          f"Summarize this conversation concisely, preserving all key "
-                          f"information, decisions, and context:\n\n{history_text}"}],
-                        model, url, backend=_backend_key(backend_label),
-                        timeout=int(timeout),
-                    )
+                    try:
+                        summary = complete(
+                            [{"role": "user", "content":
+                              f"Summarize this conversation concisely, preserving all key "
+                              f"information, decisions, and context:\n\n{history_text}"}],
+                            m_name, use_url, backend=use_bk,
+                            timeout=int(timeout),
+                        )
+                    finally:
+                        _stats.release_host_sem(_host)
                     new_messages = [
                         {"role": "user",
                          "content": f"[Compacted conversation summary]\n\n{summary}"},
@@ -950,12 +1047,16 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     _stop_gen.set()
 
                 def _send(user_msg, messages, cid, ctx, hidden_ctx, model, url, backend_label,
-                          show_thinking, timeout):
+                          show_thinking, timeout, incognito):
                     _stop_gen.clear()
                     user_msg = user_msg.strip()
                     if not user_msg:
                         yield messages, cid, ctx, f"ctx: {ctx}", ""
                         return
+
+                    m_name, m_url, m_bk = parse_model_spec(model)
+                    use_url = m_url or url
+                    use_bk = m_bk or _backend_key(backend_label)
 
                     # ── hidden context (from Add-to-chat transparent/show-sources) ──
                     base_msgs = list(messages)
@@ -974,39 +1075,57 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     rag_display = ""
                     send_msgs = base_msgs + [{"role": "user", "content": user_msg}]
 
-                    if cid is None:
-                        cid = _hist.create_chat(_hist.auto_title(user_msg))
-                    _hist.add_message(cid, "user", user_msg)
+                    if not incognito:
+                        if cid is None:
+                            cid = _hist.create_chat(_hist.auto_title(user_msg))
+                        _hist.add_message(cid, "user", user_msg)
+
+                    host_label = use_url.replace("http://", "").replace("https://", "")
 
                     import threading as _thr, queue as _q
                     _chunk_q = _q.Queue()
                     def _gen():
+                        for pos in _stats.wait_for_host(host_label):
+                            _chunk_q.put(("waiting", pos))
+                        rid = _stats.record_start(host_label, m_name)
                         try:
-                            for _c in stream_chat(send_msgs, model, url, new_ctx,
-                                                  _backend_key(backend_label),
+                            for _c in stream_chat(send_msgs, m_name, use_url, new_ctx,
+                                                  use_bk,
                                                   thinking=show_thinking,
                                                   timeout=int(timeout)):
                                 _chunk_q.put(("chunk", _c))
                         except Exception as _e:
                             _chunk_q.put(("error", str(_e)))
                         _chunk_q.put(("done", None))
+                        _stats.record_end(rid)
+                        _stats.auto_release_host(host_label)
+                        _stats.release_host_sem(host_label)
                     _thr.Thread(target=_gen, daemon=True).start()
 
                     _spin = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-                    _si, full = 0, ""
+                    _si, full, _in_queue = 0, "", False
                     while True:
                         if _stop_gen.is_set():
                             break
                         try:
                             kind, val = _chunk_q.get(timeout=0.25)
                         except _q.Empty:
-                            display = messages + [{"role": "assistant",
-                                                   "content": f"{_spin[_si % 10]} _Thinking..._"}]
-                            _si += 1
-                            yield display, cid, new_ctx, f"ctx: {new_ctx}", ""
+                            if not _in_queue:
+                                display = messages + [{"role": "assistant",
+                                                       "content": f"{_spin[_si % 10]} _Thinking..._"}]
+                                _si += 1
+                                yield display, cid, new_ctx, f"ctx: {new_ctx}", ""
                             continue
                         if kind == "done":
                             break
+                        if kind == "waiting":
+                            _in_queue = True
+                            display = messages + [{"role": "assistant",
+                                                   "content": f"⏳ Waiting in queue... (position {val})"}]
+                            yield display, cid, new_ctx, f"ctx: {new_ctx}", ""
+                            continue
+                        if _in_queue:
+                            _in_queue = False
                         if kind == "error":
                             display = messages + [{"role": "assistant", "content": f"Error: {val}"}]
                             yield display, cid, new_ctx, f"ctx: {new_ctx}", ""
@@ -1018,7 +1137,8 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
 
                     if full:
                         messages = messages + [{"role": "assistant", "content": full}]
-                        _hist.add_message(cid, "assistant", full)
+                        if not incognito:
+                            _hist.add_message(cid, "assistant", full)
                     display = messages[:]
                     display[-1] = {"role": "assistant",
                                    "content": _fmt(full, show_thinking) + rag_display}
@@ -1027,7 +1147,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                 _send_out = [chatbot, s_cid, s_ctx, ctx_lbl, msg_in]
                 _send_in  = [msg_in, chatbot, s_cid, s_ctx, s_hidden_ctx,
                               g_model, g_url, g_backend,
-                              g_thinking, s_timeout]
+                              g_thinking, s_timeout, g_incognito]
 
                 send_btn.click(_send,   inputs=_send_in, outputs=_send_out)
                 msg_in.submit(_send,    inputs=_send_in, outputs=_send_out)
@@ -1217,13 +1337,22 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                             f"Produce only the {tgt_lang} translation, without any additional explanations or commentary. "
                             f"Please translate the following text into {tgt_lang}:\n\n\n{src.strip()}"
                         )
+                    tr_m, tr_url, tr_bk = parse_model_spec(model)
+                    _host = (tr_url or url).replace("http://", "").replace("https://", "")
+                    for pos in _stats.wait_for_host(_host):
+                        yield f"⏳ Waiting in queue... (position {pos})"
                     full = ""
-                    for chunk in stream_chat(
-                        [{"role": "user", "content": prompt}], model, url,
-                        backend=_backend_key(backend_label), timeout=int(timeout),
-                    ):
-                        full += chunk
-                        yield full
+                    try:
+                        for chunk in stream_chat(
+                            [{"role": "user", "content": prompt}],
+                            tr_m, tr_url or url,
+                            backend=tr_bk or _backend_key(backend_label),
+                            timeout=int(timeout),
+                        ):
+                            full += chunk
+                            yield full
+                    finally:
+                        _stats.release_host_sem(_host)
 
                 _tr_inputs = [tr_src, tr_src_lang, tr_tgt_lang, tr_mode, g_model, g_url, g_backend, s_timeout]
                 tr_btn.click(_translate, inputs=_tr_inputs, outputs=[tr_tgt])
@@ -1308,14 +1437,21 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     from .flows.obfuscate import _force_replace, _obfuscate_prompt
                     if not use_llm:
                         return _force_replace(text, glossary)
+                    _m, _u, _b = parse_model_spec(model)
+                    _host = (_u or url).replace("http://", "").replace("https://", "")
+                    for _ in _stats.wait_for_host(_host):
+                        pass
                     from .adapter import ChatAdapter
-                    adapter = ChatAdapter(model=model, base_url=url,
-                                          backend=_backend_key(backend_label))
+                    adapter = ChatAdapter(model=_m, base_url=_u or url,
+                                          backend=_b or _backend_key(backend_label))
                     prompt = _obfuscate_prompt(text, glossary)
-                    return adapter._stream_chat([
-                        {"role": "system", "content": "You are a precise text rewriter. Follow glossary instructions exactly."},
-                        {"role": "user",   "content": prompt},
-                    ]) or ""
+                    try:
+                        return adapter._stream_chat([
+                            {"role": "system", "content": "You are a precise text rewriter. Follow glossary instructions exactly."},
+                            {"role": "user",   "content": prompt},
+                        ]) or ""
+                    finally:
+                        _stats.release_host_sem(_host)
 
                 def _deobfuscate(text, glossary_yaml, use_llm, model, url, backend_label):
                     if not text.strip():
@@ -1327,14 +1463,21 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     if not use_llm:
                         rev = {v: k for k, v in glossary.items()}
                         return _force_replace(text, rev)
+                    _m, _u, _b = parse_model_spec(model)
+                    _host = (_u or url).replace("http://", "").replace("https://", "")
+                    for _ in _stats.wait_for_host(_host):
+                        pass
                     from .adapter import ChatAdapter
-                    adapter = ChatAdapter(model=model, base_url=url,
-                                          backend=_backend_key(backend_label))
+                    adapter = ChatAdapter(model=_m, base_url=_u or url,
+                                          backend=_b or _backend_key(backend_label))
                     prompt = _deobfuscate_prompt(text, glossary)
-                    return adapter._stream_chat([
-                        {"role": "system", "content": "You are a precise text rewriter. Follow glossary instructions exactly."},
-                        {"role": "user",   "content": prompt},
-                    ]) or ""
+                    try:
+                        return adapter._stream_chat([
+                            {"role": "system", "content": "You are a precise text rewriter. Follow glossary instructions exactly."},
+                            {"role": "user",   "content": prompt},
+                        ]) or ""
+                    finally:
+                        _stats.release_host_sem(_host)
 
                 def _save_obf_glossary(text):
                     import tempfile
@@ -1830,10 +1973,16 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     if not question:
                         yield "_Provide a question._", "", "", ""
                         return
+                    wa_m, wa_url, wa_bk = parse_model_spec(model)
+                    wa_use_url = wa_url or ollama_u
+                    wa_use_bk = wa_bk or _backend_key(backend_label)
+                    _host = wa_use_url.replace("http://", "").replace("https://", "")
+                    for pos in _stats.wait_for_host(_host):
+                        yield f"_⏳ Waiting in queue... (position {pos})_", "", "", ""
                     from .adapter import ChatAdapter
                     import requests as _req
-                    adapter = ChatAdapter(model=model, base_url=ollama_u,
-                                          backend=_backend_key(backend_label),
+                    adapter = ChatAdapter(model=wa_m, base_url=wa_use_url,
+                                          backend=wa_use_bk,
                                           timeout=int(timeout))
 
                     # ── single URL mode ────────────────────────────────────────
@@ -1855,11 +2004,12 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                             f"Cite source URLs where relevant."
                         )
                         answer = complete([{"role": "user", "content": prompt}],
-                                          model, ollama_u,
-                                          backend=_backend_key(backend_label),
+                                          wa_m, wa_use_url,
+                                          backend=wa_use_bk,
                                           timeout=int(timeout))
                         full = f"**Question:** {question}\n\n**Source:** {url.strip()}\n\n---\n\n{answer}"
                         src  = f"**Question:** {question}\n\n**Source:** {url.strip()}"
+                        _stats.release_host_sem(_host)
                         yield answer, full, src, ""
                         return
 
@@ -1901,11 +2051,12 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                         "Answer based on the sources above. Cite source numbers."
                     )
                     answer = complete([{"role": "user", "content": prompt}],
-                                      model, ollama_u,
-                                      backend=_backend_key(backend_label),
+                                      wa_m, wa_use_url,
+                                      backend=wa_use_bk,
                                       timeout=int(timeout))
                     full = (f"**Question:** {question}\n\n"
                             f"**Sources:**\n{src_list}\n\n---\n\n**Answer:**\n\n{answer}")
+                    _stats.release_host_sem(_host)
                     yield answer, full, src, ""
 
                 wa_btn.click(
@@ -1950,12 +2101,16 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     if not query:
                         yield "_Provide a query._"
                         return
+                    _m, _u, _b = parse_model_spec(model)
+                    _host = (_u or ollama_u).replace("http://", "").replace("https://", "")
+                    for pos in _stats.wait_for_host(_host):
+                        yield f"_⏳ Waiting in queue... (position {pos})_"
                     from .adapter import ChatAdapter
                     from .flows.webanalys import _RATING_PROMPT, _stars
                     from .flows.deepagent_md import _apply_extract, _fetch_page
 
-                    adapter = ChatAdapter(model=model, base_url=ollama_u,
-                                          backend=_backend_key(backend_label),
+                    adapter = ChatAdapter(model=_m, base_url=_u or ollama_u,
+                                          backend=_b or _backend_key(backend_label),
                                           timeout=int(timeout))
                     n = int(n)
 
@@ -2046,6 +2201,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
 
                     ratings.sort(key=lambda x: x[0], reverse=True)
                     output = _render(ratings)
+                    _stats.release_host_sem(_host)
                     yield output
 
                 wan_btn.click(
@@ -2175,11 +2331,15 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     if not start_url:
                         yield "_Provide a start URL._"
                         return
+                    _m, _u, _b = parse_model_spec(model)
+                    _host = (_u or ollama_u).replace("http://", "").replace("https://", "")
+                    for pos in _stats.wait_for_host(_host):
+                        yield f"_⏳ Waiting in queue... (position {pos})_"
                     from .adapter import ChatAdapter
                     from .flows import webcrawl as _wcf
 
-                    adapter = ChatAdapter(model=model, base_url=ollama_u,
-                                          backend=_backend_key(backend_label),
+                    adapter = ChatAdapter(model=_m, base_url=_u or ollama_u,
+                                          backend=_b or _backend_key(backend_label),
                                           timeout=int(timeout))
 
                     crawl_dir = VYRII_HOME / "crawl"
@@ -2242,6 +2402,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     else:
                         yield ('```\n' + '\n'.join(lines) + '\n```\n\n'
                                '_No output written._')
+                    _stats.release_host_sem(_host)
 
                 wc_btn.click(
                     _webcrawl,
@@ -2275,11 +2436,15 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     if not url:
                         yield "_Provide a URL._"
                         return
+                    _m, _u, _b = parse_model_spec(model)
+                    _host = (_u or ollama_u).replace("http://", "").replace("https://", "")
+                    for pos in _stats.wait_for_host(_host):
+                        yield f"⏳ Waiting in queue... (position {pos})"
                     from .adapter import ChatAdapter
                     from .flows import webindex as _wi
 
-                    adapter = ChatAdapter(model=model, base_url=ollama_u,
-                                          backend=_backend_key(backend_label),
+                    adapter = ChatAdapter(model=_m, base_url=_u or ollama_u,
+                                          backend=_b or _backend_key(backend_label),
                                           timeout=int(timeout))
                     proj = project.strip()
                     proj_arg = f"--project {proj}" if proj else ""
@@ -2289,6 +2454,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     lines = []
                     for prog in _stream_flow(lambda: _wi.run(adapter, args), lines):
                         yield prog
+                    _stats.release_host_sem(_host)
                     yield ('```\n' + '\n'.join(lines) + '\n```\n\n'
                            '_Index complete. Refresh RAG projects in DeepAgent MD tab._')
 
@@ -2423,11 +2589,15 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     if not task:
                         yield t["provide_topic"]
                         return
+                    _m, _u, _b = parse_model_spec(model)
+                    _host = (_u or ollama_u).replace("http://", "").replace("https://", "")
+                    for pos in _stats.wait_for_host(_host):
+                        yield f"⏳ Waiting in queue... (position {pos})"
                     from .adapter import ChatAdapter
                     from .flows import deepagent_md as _df
 
-                    adapter = ChatAdapter(model=model, base_url=ollama_u,
-                                          backend=_backend_key(backend_label),
+                    adapter = ChatAdapter(model=_m, base_url=_u or ollama_u,
+                                          backend=_b or _backend_key(backend_label),
                                           timeout=int(timeout))
                     _w_timeout = int(_load_config().get("worker_timeout", 300))
                     args = f'"{task}" --maxdepth {int(n_sections)} --worker-timeout {_w_timeout}'
@@ -2530,6 +2700,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     else:
                         yield (header +
                                '```\n' + '\n'.join(lines + compose_lines) + '\n```')
+                    _stats.release_host_sem(_host)
 
                 dam_btn.click(
                     _deepagent_md,
@@ -2592,8 +2763,12 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     if not path:
                         yield t.get("provide_topic", "Provide a file or directory path.")
                         return
-                    adapter = ChatAdapter(model=model, base_url=ollama_u,
-                                          backend=_backend_key(backend_label),
+                    _m, _u, _b = parse_model_spec(model)
+                    _host = (_u or ollama_u).replace("http://", "").replace("https://", "")
+                    for pos in _stats.wait_for_host(_host):
+                        yield f"⏳ Waiting in queue... (position {pos})"
+                    adapter = ChatAdapter(model=_m, base_url=_u or ollama_u,
+                                          backend=_b or _backend_key(backend_label),
                                           timeout=int(timeout))
                     args = f'"{path}"'
                     if query.strip():
@@ -2622,6 +2797,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                             yield log_block + f'\n\n**{out_line}**'
                     else:
                         yield log_block
+                    _stats.release_host_sem(_host)
 
                 sc_btn.click(
                     _scan_compact,
@@ -3215,6 +3391,68 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     _do_save_conn,
                     inputs=[g_url, g_model, g_backend],
                     outputs=[s_conn_current, s_conn_hint],
+                )
+
+                gr.Markdown(t.get("settings_profile_header", "### Active profile"))
+                _profile_names = []
+                try:
+                    from . import parallel as _par_settings
+                    _profile_names = _par_settings.profile_names()
+                except Exception:
+                    pass
+                _cur_profile = _cfg_now.get("active_profile", "")
+                with gr.Row():
+                    s_profile = gr.Dropdown(
+                        choices=[""] + _profile_names,
+                        value=_cur_profile,
+                        label=t.get("active_profile_label", "Active profile"),
+                        scale=2,
+                        allow_custom_value=False,
+                    )
+                    s_profile_save = gr.Button(t.get("settings_profile_save_btn", "Save"), scale=1)
+                s_profile_hint = gr.Markdown("")
+
+                def _do_save_profile(name):
+                    _save_config({"active_profile": name})
+                    mods = _models_with_profile(
+                        _saved_url, _backend_key(_saved_backend))
+                    label = name if name else t.get("no_profile_label", "none (local only)")
+                    return (
+                        gr.Dropdown(choices=mods, value=mods[0]),
+                        t.get("profile_saved", "Profile set to: {name}").format(name=label),
+                    )
+
+                s_profile_save.click(
+                    _do_save_profile,
+                    inputs=[s_profile],
+                    outputs=[g_model, s_profile_hint],
+                )
+
+                gr.Markdown(t.get("settings_reserve_header", "---\n### Reserve mode"))
+                with gr.Row():
+                    s_reserve_mode = gr.Radio(
+                        choices=["response", "timer"],
+                        value=_cfg_now.get("reserve_mode", "response"),
+                        label=t.get("reserve_mode_label", "Reserve model"),
+                        scale=2,
+                    )
+                    s_reserve_timeout = gr.Number(
+                        value=int(_cfg_now.get("reserve_timeout", 600)),
+                        label=t.get("reserve_timeout_label", "Timer (seconds)"),
+                        minimum=60, maximum=3600, precision=0,
+                        scale=1,
+                    )
+                    s_reserve_save = gr.Button(t.get("settings_reserve_save_btn", "Save"), scale=1)
+                s_reserve_hint = gr.Markdown("")
+
+                def _do_save_reserve(mode, timeout_val):
+                    _save_config({"reserve_mode": mode, "reserve_timeout": int(timeout_val)})
+                    return t.get("reserve_saved", "Reserve mode saved: {mode}").format(mode=mode)
+
+                s_reserve_save.click(
+                    _do_save_reserve,
+                    inputs=[s_reserve_mode, s_reserve_timeout],
+                    outputs=[s_reserve_hint],
                 )
 
                 gr.Markdown(t["settings_lang_header"])

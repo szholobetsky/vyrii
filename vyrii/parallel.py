@@ -97,12 +97,16 @@ def run_parallel(
     """Run all workers concurrently. Returns list of result dicts."""
 
     def call_one(idx: int, w: dict) -> dict:
+        from . import stats as _stats
         aspect = (aspects[idx] if idx < len(aspects) else "").strip()
         prompt = f"{main_prompt}\n\nAspect: {aspect}" if aspect else main_prompt
         msgs = list(base_messages) + [{"role": "user", "content": prompt}]
         backend = BACKEND_OPENAI if w.get("provider") == "openai" else BACKEND_OLLAMA
         host = w["host"]
         url = f"http://{host}" if not host.startswith("http") else host
+        host_label = url.replace("http://", "").replace("https://", "")
+        for pos in _stats.wait_for_host(host_label):
+            progress_cb(f"[queue] **{w['model']}** @ {host} — waiting (position {pos})")
         try:
             reply = complete(msgs, w["model"], url, num_ctx, backend, timeout=timeout)
             progress_cb(f"[done] **{w['model']}** @ {host} — {len(reply)} chars")
@@ -110,6 +114,8 @@ def run_parallel(
         except Exception as e:
             progress_cb(f"[error] **{w['model']}** @ {host} — {e}")
             return {**w, "aspect": aspect, "reply": None, "error": str(e)}
+        finally:
+            _stats.release_host_sem(host_label)
 
     progress_cb(f"Starting **{len(workers)}** worker(s)…")
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(workers)) as pool:

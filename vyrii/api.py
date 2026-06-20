@@ -17,15 +17,16 @@ import re
 import time
 import uuid
 
-from fastapi import FastAPI, File as _File, UploadFile
+from fastapi import FastAPI, File as _File, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from .engine import (
-    BACKEND_OLLAMA, DEFAULT_OLLAMA,
-    list_models, stream_chat, complete,
+    BACKEND_OLLAMA, BACKEND_OPENAI, DEFAULT_OLLAMA,
+    list_models, parse_model_spec, stream_chat, complete,
 )
+from . import stats as _stats
 
 
 # ── request models (module-level — required by Pydantic v2) ──────────────────
@@ -144,6 +145,13 @@ class SettingsRequest(BaseModel):
     theme:           str | None = None
     timeout:         int | None = None
     worker_timeout:  int | None = None
+    active_profile:  str | None = None
+    reserve_mode:    str | None = None
+    reserve_timeout: int | None = None
+
+class LockRequest(BaseModel):
+    host:   str
+    action: str = "lock"
 
 class AuthChangeRequest(BaseModel):
     username: str
@@ -244,55 +252,98 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
                 headers={},
             )
 
+    # ── start scheduler ────────────────────────────────────────────────────────
+    from . import scheduler as _sch_startup
+    _sch_startup.start_scheduler()
+
     def _default_model() -> str:
         models = list_models(base_url, backend)
         return models[0] if models else ""
 
     # ── /v1/models ────────────────────────────────────────────────────────────
 
+    def _active_profile_workers() -> list[dict]:
+        cfg = _read_cfg()
+        name = cfg.get("active_profile", "")
+        if not name:
+            return []
+        from . import parallel as _par_models
+        profile = _par_models.get_profile(name)
+        return profile.get("workers", []) if profile else []
+
     @app.get("/v1/models")
     def get_models():
-        models = list_models(base_url, backend)
-        return {
-            "object": "list",
-            "data": [
-                {"id": m, "object": "model", "created": 0, "owned_by": "local"}
-                for m in models
-            ],
-        }
+        local = list_models(base_url, backend)
+        host_label = base_url.replace("http://", "").replace("https://", "")
+        data = [
+            {"id": m, "object": "model", "created": 0,
+             "owned_by": "local", "group": f"{host_label} ({backend})"}
+            for m in local
+        ]
+        for w in _active_profile_workers():
+            h = w.get("host", "")
+            h_label = h.replace("http://", "").replace("https://", "")
+            bk = "openai" if w.get("provider") == "openai" else "ollama"
+            mid = f"{w['model']}@{bk}://{h_label}"
+            data.append({"id": mid, "object": "model", "created": 0,
+                         "owned_by": "remote", "group": f"{h_label} ({bk})"})
+        return {"object": "list", "data": data}
 
     # ── /v1/chat/completions ──────────────────────────────────────────────────
 
     @app.post("/v1/chat/completions")
     def chat_completions(req: ChatRequest):
-        model = req.model or _default_model()
+        raw_model = req.model or _default_model()
         messages = [m.model_dump() for m in req.messages]
         cid = f"chatcmpl-{uuid.uuid4().hex[:8]}"
         created = int(time.time())
 
+        m_name, m_url, m_backend = parse_model_spec(raw_model)
+        use_url = m_url or base_url
+        use_backend = m_backend or backend
+
+        host_label = use_url.replace("http://", "").replace("https://", "")
+
         if req.stream:
             def _generate():
-                for chunk in stream_chat(messages, model, base_url, backend=backend):
-                    data = {
+                for pos in _stats.wait_for_host(host_label):
+                    yield f'data: {json.dumps({"waiting": True, "position": pos})}\n\n'
+                rid = _stats.record_start(host_label, m_name)
+                try:
+                    for chunk in stream_chat(messages, m_name, use_url,
+                                             backend=use_backend):
+                        data = {
+                            "id": cid, "object": "chat.completion.chunk",
+                            "created": created, "model": raw_model,
+                            "choices": [{"index": 0, "delta": {"content": chunk}, "finish_reason": None}],
+                        }
+                        yield f"data: {json.dumps(data)}\n\n"
+                    final = {
                         "id": cid, "object": "chat.completion.chunk",
-                        "created": created, "model": model,
-                        "choices": [{"index": 0, "delta": {"content": chunk}, "finish_reason": None}],
+                        "created": created, "model": raw_model,
+                        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
                     }
-                    yield f"data: {json.dumps(data)}\n\n"
-                final = {
-                    "id": cid, "object": "chat.completion.chunk",
-                    "created": created, "model": model,
-                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-                }
-                yield f"data: {json.dumps(final)}\n\n"
-                yield "data: [DONE]\n\n"
+                    yield f"data: {json.dumps(final)}\n\n"
+                    yield "data: [DONE]\n\n"
+                finally:
+                    _stats.record_end(rid)
+                    _stats.auto_release_host(host_label)
+                    _stats.release_host_sem(host_label)
 
             return StreamingResponse(_generate(), media_type="text/event-stream")
 
-        full = complete(messages, model, base_url, backend=backend)
+        for _ in _stats.wait_for_host(host_label):
+            pass
+        rid = _stats.record_start(host_label, m_name)
+        try:
+            full = complete(messages, m_name, use_url, backend=use_backend)
+        finally:
+            _stats.record_end(rid)
+            _stats.auto_release_host(host_label)
+            _stats.release_host_sem(host_label)
         return {
             "id": cid, "object": "chat.completion",
-            "created": created, "model": model,
+            "created": created, "model": raw_model,
             "choices": [{"index": 0, "message": {"role": "assistant", "content": full}, "finish_reason": "stop"}],
             "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
         }
@@ -643,6 +694,27 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
             return {"ok": True, "config": _read_cfg()}
         except Exception as e:
             return {"error": str(e)}
+
+    @app.get("/vyrii/stats")
+    def vyrii_stats():
+        return {"stats": _stats.get_stats(), "locks": _stats.get_all_locks()}
+
+    @app.get("/vyrii/lock")
+    def vyrii_lock_info():
+        return {"locks": _stats.get_all_locks()}
+
+    @app.post("/vyrii/lock")
+    def vyrii_lock(req: LockRequest, raw_request: Request = None):
+        ip = "127.0.0.1"
+        if raw_request and raw_request.client:
+            ip = raw_request.client.host
+        if req.action == "release":
+            _stats.release_host(req.host, ip)
+            return {"ok": True}
+        cfg = _read_cfg()
+        mode = cfg.get("reserve_mode", "response")
+        timeout = int(cfg.get("reserve_timeout", 600))
+        return _stats.lock_host(req.host, ip, mode, timeout)
 
     @app.post("/vyrii/auth/password")
     def auth_change_password(req: AuthChangeRequest):

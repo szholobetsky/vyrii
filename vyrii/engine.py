@@ -10,6 +10,23 @@ BACKEND_OPENAI = "openai"
 DEFAULT_OLLAMA = "http://localhost:11434"
 DEFAULT_OPENAI = "http://localhost:8080"
 
+
+import re as _re
+
+def parse_model_spec(spec: str) -> tuple[str, str | None, str | None]:
+    """Parse 'model@backend://host:port' → (model, base_url, backend_type).
+    If no '@', returns (spec, None, None) — caller should use defaults."""
+    if "@" not in spec:
+        return spec, None, None
+    model, rest = spec.split("@", 1)
+    m = _re.match(r"(ollama|openai)://(.+)", rest)
+    if not m:
+        return spec, None, None
+    backend_type = m.group(1)
+    host = m.group(2)
+    base_url = f"http://{host}" if not host.startswith("http") else host
+    return model, base_url, backend_type
+
 CTX_START = 2048
 CTX_STEP  = 2048
 _CTX_FILL  = 0.70

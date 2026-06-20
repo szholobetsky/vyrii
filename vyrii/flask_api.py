@@ -31,9 +31,10 @@ from flask import (
 from flask_cors import CORS
 
 from .engine import (
-    BACKEND_OLLAMA, DEFAULT_OLLAMA,
-    complete, list_models, smart_ctx, stream_chat,
+    BACKEND_OLLAMA, BACKEND_OPENAI, DEFAULT_OLLAMA,
+    complete, list_models, parse_model_spec, smart_ctx, stream_chat,
 )
+from . import stats as _stats
 
 
 def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
@@ -79,53 +80,97 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
 
     # ── /v1/models ────────────────────────────────────────────────────────────
 
+    def _active_profile_workers() -> list[dict]:
+        cfg = _read_cfg()
+        name = cfg.get("active_profile", "")
+        if not name:
+            return []
+        from . import parallel as _par_models
+        profile = _par_models.get_profile(name)
+        return profile.get("workers", []) if profile else []
+
     @app.route("/v1/models", methods=["GET"])
     def get_models():
-        models = list_models(base_url, backend)
-        return jsonify({
-            "object": "list",
-            "data": [
-                {"id": m, "object": "model", "created": 0, "owned_by": "local"}
-                for m in models
-            ],
-        })
+        local = list_models(base_url, backend)
+        host_label = base_url.replace("http://", "").replace("https://", "")
+        data = [
+            {"id": m, "object": "model", "created": 0,
+             "owned_by": "local", "group": f"{host_label} ({backend})"}
+            for m in local
+        ]
+        for w in _active_profile_workers():
+            h = w.get("host", "")
+            url = f"http://{h}" if not h.startswith("http") else h
+            h_label = h.replace("http://", "").replace("https://", "")
+            bk = "openai" if w.get("provider") == "openai" else "ollama"
+            mid = f"{w['model']}@{bk}://{h_label}"
+            data.append({"id": mid, "object": "model", "created": 0,
+                         "owned_by": "remote", "group": f"{h_label} ({bk})"})
+        return jsonify({"object": "list", "data": data})
+
+    # ── start scheduler ────────────────────────────────────────────────────────
+    from . import scheduler as _sch_startup
+    _sch_startup.start_scheduler()
 
     # ── /v1/chat/completions ──────────────────────────────────────────────────
 
     @app.route("/v1/chat/completions", methods=["POST"])
     def chat_completions():
         body = request.get_json(silent=True) or {}
-        model = body.get("model") or _default_model()
+        raw_model = body.get("model") or _default_model()
         messages = body.get("messages", [])
         do_stream = body.get("stream", False)
         cid = f"chatcmpl-{uuid.uuid4().hex[:8]}"
         created = int(time.time())
 
+        m_name, m_url, m_backend = parse_model_spec(raw_model)
+        use_url = m_url or base_url
+        use_backend = m_backend or backend
+
         num_ctx = body.get("num_ctx") or smart_ctx(messages)
+
+        host_label = use_url.replace("http://", "").replace("https://", "")
 
         if do_stream:
             def _gen():
-                for chunk in stream_chat(messages, model, base_url, num_ctx=num_ctx, backend=backend):
-                    data = {
+                for pos in _stats.wait_for_host(host_label):
+                    yield f'data: {json.dumps({"waiting": True, "position": pos})}\n\n'
+                rid = _stats.record_start(host_label, m_name)
+                try:
+                    for chunk in stream_chat(messages, m_name, use_url,
+                                             num_ctx=num_ctx, backend=use_backend):
+                        data = {
+                            "id": cid, "object": "chat.completion.chunk",
+                            "created": created, "model": raw_model,
+                            "choices": [{"index": 0, "delta": {"content": chunk}, "finish_reason": None}],
+                        }
+                        yield f"data: {json.dumps(data)}\n\n"
+                    final = {
                         "id": cid, "object": "chat.completion.chunk",
-                        "created": created, "model": model,
-                        "choices": [{"index": 0, "delta": {"content": chunk}, "finish_reason": None}],
+                        "created": created, "model": raw_model,
+                        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
                     }
-                    yield f"data: {json.dumps(data)}\n\n"
-                final = {
-                    "id": cid, "object": "chat.completion.chunk",
-                    "created": created, "model": model,
-                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-                }
-                yield f"data: {json.dumps(final)}\n\n"
-                yield "data: [DONE]\n\n"
+                    yield f"data: {json.dumps(final)}\n\n"
+                    yield "data: [DONE]\n\n"
+                finally:
+                    _stats.record_end(rid)
+                    _stats.auto_release_host(host_label)
+                    _stats.release_host_sem(host_label)
 
             return Response(stream_with_context(_gen()), mimetype="text/event-stream")
 
-        full = complete(messages, model, base_url, num_ctx=num_ctx, backend=backend)
+        for _ in _stats.wait_for_host(host_label):
+            pass
+        rid = _stats.record_start(host_label, m_name)
+        try:
+            full = complete(messages, m_name, use_url, num_ctx=num_ctx, backend=use_backend)
+        finally:
+            _stats.record_end(rid)
+            _stats.auto_release_host(host_label)
+            _stats.release_host_sem(host_label)
         return jsonify({
             "id": cid, "object": "chat.completion",
-            "created": created, "model": model,
+            "created": created, "model": raw_model,
             "choices": [{"index": 0, "message": {"role": "assistant", "content": full}, "finish_reason": "stop"}],
             "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
         })
@@ -506,13 +551,38 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
     def settings_save():
         body = request.get_json(silent=True) or {}
         allowed = {"saved_url", "saved_model", "saved_backend", "lang",
-                   "theme", "timeout", "worker_timeout"}
+                   "theme", "timeout", "worker_timeout", "active_profile",
+                   "reserve_mode", "reserve_timeout"}
         updates = {k: v for k, v in body.items() if k in allowed and v is not None}
         try:
             _write_cfg(updates)
             return jsonify({"ok": True, "config": _read_cfg()})
         except Exception as e:
             return jsonify({"error": str(e)})
+
+    @app.route("/vyrii/stats", methods=["GET"])
+    def vyrii_stats():
+        return jsonify({"stats": _stats.get_stats(), "locks": _stats.get_all_locks()})
+
+    @app.route("/vyrii/lock", methods=["GET"])
+    def vyrii_lock_info():
+        return jsonify({"locks": _stats.get_all_locks()})
+
+    @app.route("/vyrii/lock", methods=["POST"])
+    def vyrii_lock():
+        body = request.get_json(silent=True) or {}
+        host = body.get("host", "")
+        action = body.get("action", "lock")
+        ip = request.remote_addr or "127.0.0.1"
+        if not host:
+            return jsonify({"error": "host required"}), 400
+        if action == "release":
+            _stats.release_host(host, ip)
+            return jsonify({"ok": True})
+        cfg = _read_cfg()
+        mode = cfg.get("reserve_mode", "response")
+        timeout = int(cfg.get("reserve_timeout", 600))
+        return jsonify(_stats.lock_host(host, ip, mode, timeout))
 
     @app.route("/vyrii/auth/password", methods=["POST"])
     def auth_change_password():

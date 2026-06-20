@@ -102,10 +102,17 @@
     <div class="sb-footer">
       <div>
         <label class="sf-label" data-i18n="label_model">Model</label>
-        <select id="g-model" class="sf-select" onchange="onModelChange()">
-          <option value="">loading…</option>
-        </select>
+        <div class="model-row">
+          <select id="g-model" class="sf-select" style="flex:1;min-width:0" onchange="onModelChange()">
+            <option value="">loading…</option>
+          </select>
+          <div class="model-btns">
+            <button class="sf-stats-btn" onclick="toggleStatsPopup()" title="Backend stats">&#x1F4CA;</button>
+            <button class="sf-stats-btn" id="lock-btn" onclick="toggleLock()" title="Lock/Reserve">&#x1F513;</button>
+          </div>
+        </div>
       </div>
+      <div id="stats-popup" class="stats-popup" style="display:none"></div>
 
       <div>
         <label class="sf-label" data-i18n="label_theme">Theme</label>
@@ -147,6 +154,10 @@
           <label class="chk-label" style="font-size:12px;gap:4px">
             <input type="checkbox" id="chk-thinking" onchange="state.showThinking=this.checked;renderChatMessages()">
             <span data-i18n="show_thinking">Thinking</span>
+          </label>
+          <label class="chk-label chk-incognito" style="font-size:12px;gap:4px">
+            <input type="checkbox" id="chk-incognito" onchange="toggleIncognito(this.checked)">
+            <span data-i18n="incognito">Incognito</span>
           </label>
           <button class="btn btn-ghost btn-sm" onclick="toggleHistory()" data-i18n="history">History</button>
           <button class="btn btn-ghost btn-sm" onclick="newChat()" data-i18n="new_chat">New chat</button>
@@ -707,6 +718,28 @@
               <option value="ollama">Ollama</option>
               <option value="openai">OpenAI-compatible</option>
             </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="active_profile">Active profile</label>
+            <select id="cfg-active-profile" class="form-control">
+              <option value="" data-i18n="no_profile">— none (local only) —</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-title" data-i18n="settings_reserve">Reserve mode</div>
+          <div class="form-group" style="display:flex;flex-direction:column;gap:6px">
+            <label class="chk-label" style="font-size:13px;gap:6px">
+              <input type="radio" name="reserve-mode" value="response" id="cfg-reserve-response" checked>
+              <span data-i18n="reserve_till_response">Till end of response</span>
+            </label>
+            <label class="chk-label" style="font-size:13px;gap:6px">
+              <input type="radio" name="reserve-mode" value="timer" id="cfg-reserve-timer">
+              <span data-i18n="reserve_by_timer">By timer</span>
+              <input type="number" id="cfg-reserve-timeout" class="form-control form-control-sm"
+                     value="600" min="60" max="3600" style="width:80px;display:inline-block"> s
+            </label>
           </div>
         </div>
 
