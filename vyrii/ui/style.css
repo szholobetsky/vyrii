@@ -1030,3 +1030,17 @@ select.form-control { cursor: pointer; }
   background: rgba(255,160,60,.15);
   color: #ffa03c;
 }
+.md-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin: 8px 0;
+}
+.md-table th, .md-table td {
+  padding: 4px 10px;
+  border: 1px solid var(--text-muted, #8aa);
+  color: var(--text, #d8dee9);
+}
+.md-table th {
+  font-weight: 600;
+}
