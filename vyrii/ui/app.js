@@ -1045,9 +1045,11 @@ function wcUpdateVisibility() {
   const needTask    = mode === 'llm' || filter === 'llm';
   const needFormat  = mode === 'llm';
   const needColumns = mode === 'extract' || mode === 'llm';
+  const needPrefix  = filter === 'url-prefix';
   document.getElementById('wc-task-wrap').style.display    = needTask    ? 'flex' : 'none';
   document.getElementById('wc-format-wrap').style.display  = needFormat  ? 'flex' : 'none';
   document.getElementById('wc-columns-wrap').style.display = needColumns ? 'flex' : 'none';
+  document.getElementById('wc-prefix-wrap').style.display  = needPrefix  ? 'flex' : 'none';
 }
 
 async function runWebCrawl() {
@@ -1063,6 +1065,8 @@ async function runWebCrawl() {
         url,
         mode:       document.getElementById('wc-mode').value,
         filter:     document.getElementById('wc-filter').value,
+        url_prefix: document.getElementById('wc-prefix').value.trim(),
+        path:       document.getElementById('wc-path').value.trim(),
         depth:      +document.getElementById('wc-depth').value,
         max_pages:  +document.getElementById('wc-pages').value,
         task:       document.getElementById('wc-task').value.trim(),

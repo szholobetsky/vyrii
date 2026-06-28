@@ -78,10 +78,13 @@ def _tree_text(root: _pathlib.Path, prefix: str = "", depth: int = 0,
 
 
 def _list_rag_projects() -> list:
-    p = VYRII_HOME / ".simargl_web"
-    if not p.exists():
+    store = VYRII_HOME / ".simargl"
+    if not store.exists():
         return []
-    return sorted(d.name for d in p.iterdir() if d.is_dir())
+    return sorted(
+        d.name for d in store.iterdir()
+        if d.is_dir() and (d / "meta.json").exists()
+    )
 
 
 def _rag_search(query: str, project: str, top_k: int = 3) -> tuple[list, str]:
@@ -259,6 +262,39 @@ def _save_config(updates: dict):
     cfg.update(updates)
     (VYRII_HOME / "config.json").write_text(
         _json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+# ── external tools ─────────────────────────────────────────────────────────────
+
+_DEFAULT_TOOLS = [
+    {"name": "SIMARGL", "port": 7861},
+    {"name": "SVITOVYD", "port": 7860},
+]
+
+
+def _load_tools() -> list[dict]:
+    return _load_config().get("external_tools", list(_DEFAULT_TOOLS))
+
+
+def _save_tools(tools: list[dict]):
+    _save_config({"external_tools": tools})
+
+
+def _tools_bar_html(tools: list[dict]) -> str:
+    links = "\n  ".join(
+        f'<a data-vyrii-port="{tool["port"]}" href="http://localhost:{tool["port"]}"'
+        f' target="_blank"'
+        f' style="font-size:13px;font-weight:600;text-decoration:none;'
+        f'padding:3px 10px;border-radius:6px;border:1px solid currentColor;opacity:0.75;">'
+        f'{tool["name"]} :{tool["port"]}</a>'
+        for tool in tools
+    )
+    return (
+        '<div style="margin:2px 0 8px 0;display:flex;gap:18px;'
+        'align-items:center;flex-wrap:wrap;">'
+        '<span style="opacity:0.5;font-size:11px;letter-spacing:.05em;">TOOLS</span>\n  '
+        + links + "\n</div>"
     )
 
 
@@ -664,6 +700,40 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
 
     with gr.Blocks(title="Vyrii") as app:
         gr.Markdown(t["app_title"])
+
+        _tools_now = _load_tools()
+        with gr.Row():
+            tools_bar = gr.HTML(value=_tools_bar_html(_tools_now), scale=10)
+            _et_add_btn = gr.Button("+", scale=0, min_width=38, size="sm")
+
+        with gr.Row(visible=False) as _et_add_row:
+            _et_name   = gr.Textbox(label=t.get("et_name_label", "Service name"),
+                                    placeholder=t.get("et_name_ph", "PPTREC"), scale=2)
+            _et_port   = gr.Number(label=t.get("et_port_label", "Port"),
+                                   value=8080, precision=0, minimum=1, maximum=65535, scale=1)
+            _et_save   = gr.Button(t.get("et_add_btn", "Add"), variant="primary",
+                                   scale=1, size="sm")
+            _et_cancel = gr.Button("×", scale=0, min_width=38, size="sm")
+
+        _et_add_btn.click(lambda: gr.update(visible=True), outputs=[_et_add_row])
+        _et_cancel.click(lambda: gr.update(visible=False), outputs=[_et_add_row])
+
+        def _do_add_tool(name, port):
+            nm = (name or "").strip().upper()
+            p  = int(port or 8080)
+            if not nm:
+                return gr.update(), gr.update(visible=True), gr.update()
+            existing = _load_tools()
+            if not any(e["port"] == p for e in existing):
+                existing.append({"name": nm, "port": p})
+                _save_tools(existing)
+            return _tools_bar_html(existing), gr.update(visible=False), gr.update(value="")
+
+        _et_save.click(
+            _do_add_tool,
+            inputs=[_et_name, _et_port],
+            outputs=[tools_bar, _et_add_row, _et_name],
+        )
 
         # ── shared settings bar ────────────────────────────────────────────────
         g_saved_timeout = gr.BrowserState(180)
@@ -2237,6 +2307,15 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                         label=t["wc_filter_label"],
                         info="url-prefix=stay under start path | llm=LLM decides relevance (works with any mode)",
                     )
+                wc_prefix = gr.Textbox(
+                    label="URL prefix (optional — defaults to start URL)",
+                    placeholder="https://example.com/docs/",
+                    visible=False,
+                )
+                wc_path = gr.Textbox(
+                    label=t.get("wc_path_label", "Output path (optional — default: ~/.vyrii/crawl/)"),
+                    placeholder="/myproject/rawdata",
+                )
                 with gr.Row():
                     wc_depth = gr.Slider(1, 10, value=2, step=1, label=t["wc_depth_label"])
                     wc_pages = gr.Number(value=20, minimum=0, precision=0,
@@ -2284,23 +2363,25 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     show_task    = mode == "llm" or filter_val == "llm"
                     show_format  = mode == "llm"
                     show_columns = mode in ("extract", "llm")
+                    show_prefix  = filter_val == "url-prefix"
                     return (
                         gr.update(visible=show_task),
                         gr.update(visible=show_format),
                         gr.update(visible=show_columns),
                         gr.update(visible=show_columns),
                         gr.update(visible=show_columns),
+                        gr.update(visible=show_prefix),
                     )
 
                 wc_mode.change(
                     _wc_mode_change,
                     inputs=[wc_mode, wc_filter],
-                    outputs=[wc_task, wc_format, wc_columns, wc_cols_load, wc_cols_save],
+                    outputs=[wc_task, wc_format, wc_columns, wc_cols_load, wc_cols_save, wc_prefix],
                 )
                 wc_filter.change(
                     _wc_mode_change,
                     inputs=[wc_mode, wc_filter],
-                    outputs=[wc_task, wc_format, wc_columns, wc_cols_load, wc_cols_save],
+                    outputs=[wc_task, wc_format, wc_columns, wc_cols_load, wc_cols_save, wc_prefix],
                 )
 
                 def _load_wc_yaml(file):
@@ -2322,10 +2403,10 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                 wc_cols_load.upload(_load_wc_yaml, inputs=[wc_cols_load], outputs=[wc_columns])
                 wc_cols_save.click(_save_wc_yaml, inputs=[wc_columns], outputs=[wc_cols_save])
 
-                def _webcrawl(start_url, mode, filter_mode, task, fmt, use_ask,
+                def _webcrawl(start_url, mode, filter_mode, url_prefix, wc_path_val, task, fmt, use_ask,
                               columns_yaml, depth, pages,
                               model, ollama_u, backend_label, timeout):
-                    import os, time as _time, tempfile
+                    import os, time as _time, tempfile, pathlib as _pl
                     from urllib.parse import urlparse as _up
                     start_url = start_url.strip()
                     if not start_url:
@@ -2342,25 +2423,32 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                                           backend=_b or _backend_key(backend_label),
                                           timeout=int(timeout))
 
-                    crawl_dir = VYRII_HOME / "crawl"
-                    crawl_dir.mkdir(exist_ok=True)
+                    _explicit_path = wc_path_val.strip() if wc_path_val else ""
+                    out_dir = _pl.Path(_explicit_path) if _explicit_path else VYRII_HOME / "crawl"
+                    out_dir.mkdir(parents=True, exist_ok=True)
                     ts = _time.strftime("%Y%m%d_%H%M%S")
 
                     if mode in ("pages", "mirror"):
-                        out_path = str(crawl_dir / f"crawl_{ts}")
-                        os.makedirs(out_path, exist_ok=True)
+                        if _explicit_path:
+                            out_path = str(out_dir)
+                        else:
+                            out_path = str(out_dir / f"crawl_{ts}")
+                            os.makedirs(out_path, exist_ok=True)
                     elif mode == "extract" or (mode == "llm" and fmt == "structured"):
-                        out_path = str(crawl_dir / f"crawl_{ts}.csv")
+                        out_path = str(out_dir / f"crawl_{ts}.csv")
                     else:
-                        out_path = str(crawl_dir / f"crawl_{ts}.txt")
+                        out_path = str(out_dir / f"crawl_{ts}.txt")
 
                     args = (f"{start_url} --mode {mode}"
                             f" --depth {int(depth)} -N {int(pages)}"
                             f" --out {out_path}")
 
                     if filter_mode == "url-prefix":
-                        p = _up(start_url)
-                        prefix = f"{p.scheme}://{p.netloc}{p.path.rstrip('/')}"
+                        if url_prefix.strip():
+                            prefix = url_prefix.strip().rstrip("/")
+                        else:
+                            p = _up(start_url)
+                            prefix = f"{p.scheme}://{p.netloc}{p.path.rstrip('/')}"
                         args += f" --filter {prefix}"
                     elif filter_mode == "llm":
                         args += " --filter llm"
@@ -2406,7 +2494,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
 
                 wc_btn.click(
                     _webcrawl,
-                    inputs=[wc_url, wc_mode, wc_filter, wc_task, wc_format,
+                    inputs=[wc_url, wc_mode, wc_filter, wc_prefix, wc_path, wc_task, wc_format,
                             wc_ask, wc_columns, wc_depth, wc_pages,
                             g_model, g_url, g_backend, s_timeout],
                     outputs=[wc_out],
@@ -3495,11 +3583,66 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                                   outputs=[s_auth_hint])
                 s_auth_logout.click(None, js="() => { window.location.href = '/logout'; }")
 
+                gr.Markdown(t.get("et_header", "---\n### External tools"))
+                _et_df_tools = _load_tools()
+                et_df = gr.Dataframe(
+                    value=[[e["name"], e["port"]] for e in _et_df_tools],
+                    headers=["Name", "Port"],
+                    col_count=(2, "fixed"),
+                    datatype=["str", "number"],
+                    row_count=(max(len(_et_df_tools), 1), "dynamic"),
+                    label=t.get("et_df_label", "Tools list (clear Name to delete a row)"),
+                    interactive=True,
+                )
+                with gr.Row():
+                    et_save_btn = gr.Button(t.get("et_save_btn", "Save tools"),
+                                            variant="primary", scale=2)
+                    et_reset_btn = gr.Button("Reset to defaults", scale=1)
+                et_hint = gr.Markdown("")
+
+                def _do_save_et(df):
+                    import pandas as _pd
+                    tools = []
+                    try:
+                        for _, row in df.iterrows():
+                            nm = str(row.iloc[0]).strip().upper()
+                            try:
+                                p = int(row.iloc[1])
+                            except (ValueError, TypeError):
+                                continue
+                            if nm and nm not in ("NAN", "NONE", "") and 1 <= p <= 65535:
+                                tools.append({"name": nm, "port": p})
+                    except Exception:
+                        pass
+                    if not tools:
+                        tools = list(_DEFAULT_TOOLS)
+                    _save_tools(tools)
+                    return _tools_bar_html(tools), t.get("et_saved", "Saved.")
+
+                def _do_reset_et():
+                    _save_tools(list(_DEFAULT_TOOLS))
+                    rows = [[e["name"], e["port"]] for e in _DEFAULT_TOOLS]
+                    return (
+                        gr.Dataframe(value=rows),
+                        _tools_bar_html(_DEFAULT_TOOLS),
+                        t.get("et_saved", "Reset to defaults."),
+                    )
+
+                et_save_btn.click(
+                    _do_save_et, inputs=[et_df],
+                    outputs=[tools_bar, et_hint],
+                )
+                et_reset_btn.click(
+                    _do_reset_et,
+                    outputs=[et_df, tools_bar, et_hint],
+                )
+
                 gr.Markdown(t["settings_control_header"])
                 with gr.Row():
-                    s_restart_btn  = gr.Button(t["settings_restart_btn"], variant="secondary", size="sm", scale=1)
-                    s_reboot_btn   = gr.Button(t["settings_reboot_btn"],     variant="stop",      size="sm", scale=1)
-                    s_shutdown_btn = gr.Button(t["settings_shutdown_btn"],   variant="stop",      size="sm", scale=1)
+                    s_restart_btn      = gr.Button(t["settings_restart_btn"],      variant="secondary", size="sm", scale=1)
+                    s_restart_args_btn = gr.Button(t["settings_restart_args_btn"], variant="secondary", size="sm", scale=1)
+                    s_reboot_btn       = gr.Button(t["settings_reboot_btn"],       variant="stop",      size="sm", scale=1)
+                    s_shutdown_btn     = gr.Button(t["settings_shutdown_btn"],     variant="stop",      size="sm", scale=1)
                 with gr.Row():
                     s_restart_delay = gr.Number(
                         value=_restart_delay, minimum=2, maximum=60, step=1,
@@ -3551,6 +3694,46 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
     const secs = Math.max(0, Math.ceil((ms - elapsed) / 1000));
     fill.style.width = pct + '%';
     lbl.textContent = 'Restarting vyrii… reloading in ' + secs + ' s';
+    if (elapsed >= ms) { clearInterval(tick); window.location.reload(); }
+  }, 100);
+}""",
+                )
+
+                def _do_restart_args(delay):
+                    import sys as _sys
+                    import threading as _thr
+                    import subprocess as _sp
+                    def _relaunch():
+                        _sp.Popen(_sys.argv, cwd=os.getcwd())
+                        os._exit(0)
+                    _thr.Timer(1.5, _relaunch).start()
+                    return t.get("settings_restarting", "Restarting…")
+
+                s_restart_args_btn.click(
+                    lambda d: _do_restart_args(d if d else 8),
+                    inputs=[s_restart_delay],
+                    outputs=[s_sys_status],
+                    js="""(delay) => {
+  const ms = Math.max(2, parseInt(delay) || 8) * 1000;
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;z-index:99999;background:#1e293b;padding:10px 16px;box-shadow:0 2px 8px rgba(0,0,0,.5)';
+  const lbl = document.createElement('div');
+  lbl.style.cssText = 'color:#e2e8f0;font-size:13px;margin-bottom:6px;font-family:monospace';
+  const track = document.createElement('div');
+  track.style.cssText = 'width:100%;height:8px;background:#334155;border-radius:4px;overflow:hidden';
+  const fill = document.createElement('div');
+  fill.style.cssText = 'height:100%;width:0%;background:#22c55e;border-radius:4px';
+  track.appendChild(fill);
+  overlay.appendChild(lbl);
+  overlay.appendChild(track);
+  document.body.appendChild(overlay);
+  const start = Date.now();
+  const tick = setInterval(() => {
+    const elapsed = Date.now() - start;
+    const pct = Math.min(100, (elapsed / ms) * 100);
+    const secs = Math.max(0, Math.ceil((ms - elapsed) / 1000));
+    fill.style.width = pct + '%';
+    lbl.textContent = 'Restarting vyrii (args)… reloading in ' + secs + ' s';
     if (elapsed >= ms) { clearInterval(tick); window.location.reload(); }
   }, 100);
 }""",
@@ -3758,6 +3941,25 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
             _sch_startup.start_scheduler()
         except Exception:
             pass
+
+        app.load(
+            fn=None,
+            js="""
+() => {
+    document.title = 'Vyrii';
+    function _fixToolLinks() {
+        try {
+            var h = window.location.hostname;
+            document.querySelectorAll('[data-vyrii-port]').forEach(function(el) {
+                el.href = 'http://' + h + ':' + el.getAttribute('data-vyrii-port');
+            });
+        } catch(e) {}
+    }
+    _fixToolLinks();
+    new MutationObserver(_fixToolLinks).observe(document.body, {childList: true, subtree: true});
+}
+""",
+        )
 
     app.queue()
     app._vyrii_theme = _active_theme

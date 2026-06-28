@@ -38,7 +38,8 @@ def run(chat, args: str):
         project = prm.group(1)
         args = (args[:prm.start()] + args[prm.end():]).strip()
 
-    path = _os.getcwd()
+    import pathlib as _pl
+    path = str(_pl.Path.home() / ".vyrii")
     pam = _re.search(r'--path\s+(?:"([^"]+)"|\'([^\']+)\'|(\S+))', args)
     if pam:
         path = (pam.group(1) or pam.group(2) or pam.group(3)).rstrip("\\").rstrip("/")
@@ -118,6 +119,7 @@ def run(chat, args: str):
             return []
 
     visited = set()
+    seen = {url}   # prevents duplicate queue entries
     queue = [(url, 0)]
     saved = 0
 
@@ -146,7 +148,8 @@ def run(chat, args: str):
 
         if cur_depth < depth:
             for link in _get_links(page_bytes, cur_url, url):
-                if link not in visited:
+                if link not in seen:
+                    seen.add(link)
                     queue.append((link, cur_depth + 1))
 
     print(f"\n[webindex] crawled {saved} pages -> {out_dir}")

@@ -57,6 +57,8 @@ class WebCrawlRequest(BaseModel):
     url:        str
     mode:       str  = "combine"   # combine | pages | extract | mirror | llm
     filter:     str  = "none"      # none | url-prefix | llm
+    url_prefix: str  = ""          # custom prefix for url-prefix filter; defaults to start URL
+    path:       str  = ""          # output directory; default: ~/.vyrii/crawl/
     depth:      int  = 2
     max_pages:  int  = 20
     task:       str  = ""
@@ -495,16 +497,31 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
 
     @app.post("/vyrii/webcrawl")
     def webcrawl(req: WebCrawlRequest):
-        import tempfile as _tmp, os as _os2
+        import tempfile as _tmp, os as _os2, time as _wct, pathlib as _wcp
         from .adapter import ChatAdapter
         from .flows import webcrawl as _wcf
         model   = req.model or _default_model()
         adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
 
-        args = f'{req.url} --mode {req.mode} --depth {req.depth} -N {req.max_pages}'
+        _vyrii_home = _wcp.Path.home() / ".vyrii"
+        _out_dir = _wcp.Path(req.path.strip()) if req.path.strip() else _vyrii_home / "crawl"
+        _out_dir.mkdir(parents=True, exist_ok=True)
+        _ts = _wct.strftime("%Y%m%d_%H%M%S")
+        if req.mode in ("pages", "mirror"):
+            out_path = str(_out_dir) if req.path.strip() else str(_out_dir / f"crawl_{_ts}")
+        elif req.mode == "extract" or (req.mode == "llm" and req.format_out == "structured"):
+            out_path = str(_out_dir / f"crawl_{_ts}.csv")
+        else:
+            out_path = str(_out_dir / f"crawl_{_ts}.txt")
+
+        args = f'{req.url} --mode {req.mode} --depth {req.depth} -N {req.max_pages} --out {out_path}'
 
         if req.filter != "none":
-            args += f' --filter {req.filter}'
+            if req.filter == "url-prefix":
+                actual_prefix = (req.url_prefix.strip() or req.url).rstrip("/")
+                args += f' --filter {actual_prefix}'
+            else:
+                args += f' --filter {req.filter}'
 
         if req.task.strip():
             args += f' --task "{req.task.strip()}"'

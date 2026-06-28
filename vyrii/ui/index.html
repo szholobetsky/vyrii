@@ -338,6 +338,17 @@
           </div>
         </div>
 
+        <!-- prefix input — shown for url-prefix filter -->
+        <div class="form-group" id="wc-prefix-wrap" style="display:none">
+          <label class="form-label">URL prefix <span class="placeholder-text">(optional — defaults to start URL)</span></label>
+          <input id="wc-prefix" type="url" class="form-control" placeholder="https://example.com/docs/">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Output path <span class="placeholder-text">(optional — default: ~/.vyrii/crawl/)</span></label>
+          <input id="wc-path" type="text" class="form-control" placeholder="/myproject/rawdata">
+        </div>
+
         <div class="form-row">
           <div class="form-group">
             <label class="form-label" data-i18n="depth">Depth</label>
@@ -545,7 +556,7 @@
           </div>
           <div class="form-group flex-grow">
             <label class="form-label" data-i18n="output_path">Output path <span class="placeholder-text">(optional)</span></label>
-            <input id="wi-path" type="text" class="form-control" placeholder="/path/to/store  (default: cwd)">
+            <input id="wi-path" type="text" class="form-control" placeholder="/path/to/store  (default: ~/.vyrii)">
           </div>
         </div>
         <div class="form-row">

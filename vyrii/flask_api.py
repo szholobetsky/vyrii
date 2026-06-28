@@ -336,18 +336,39 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         model     = body.get("model", "") or _default_model()
         url       = body.get("url", "")
         mode      = body.get("mode", "combine")
-        filt      = body.get("filter", "none")
-        depth     = body.get("depth", 2)
-        max_pages = body.get("max_pages", 20)
-        task      = body.get("task", "").strip()
+        filt       = body.get("filter", "none")
+        url_prefix = body.get("url_prefix", "").strip()
+        out_path_arg = body.get("path", "").strip()
+        depth      = body.get("depth", 2)
+        max_pages  = body.get("max_pages", 20)
+        task       = body.get("task", "").strip()
         format_out = body.get("format_out", "log")
-        ask       = body.get("ask", False)
-        columns   = body.get("columns", "").strip()
-        adapter   = ChatAdapter(model=model, base_url=base_url, backend=backend)
+        ask        = body.get("ask", False)
+        columns    = body.get("columns", "").strip()
+        adapter    = ChatAdapter(model=model, base_url=base_url, backend=backend)
 
-        args = f'{url} --mode {mode} --depth {depth} -N {max_pages}'
+        import time as _wct, pathlib as _wcp
+        _vyrii_home = _wcp.Path.home() / ".vyrii"
+        if out_path_arg:
+            _out_dir = _wcp.Path(out_path_arg)
+        else:
+            _out_dir = _vyrii_home / "crawl"
+        _out_dir.mkdir(parents=True, exist_ok=True)
+        _ts = _wct.strftime("%Y%m%d_%H%M%S")
+        if mode in ("pages", "mirror"):
+            out_path = str(_out_dir) if out_path_arg else str(_out_dir / f"crawl_{_ts}")
+        elif mode == "extract" or (mode == "llm" and format_out == "structured"):
+            out_path = str(_out_dir / f"crawl_{_ts}.csv")
+        else:
+            out_path = str(_out_dir / f"crawl_{_ts}.txt")
+
+        args = f'{url} --mode {mode} --depth {depth} -N {max_pages} --out {out_path}'
         if filt != "none":
-            args += f' --filter {filt}'
+            if filt == "url-prefix":
+                actual_prefix = (url_prefix or url).rstrip("/")
+                args += f' --filter {actual_prefix}'
+            else:
+                args += f' --filter {filt}'
         if task:
             args += f' --task "{task}"'
         if mode == "llm":
