@@ -169,7 +169,7 @@ def _rag_tab_ask(query: str, rag_full: str, model: str, url: str,
     from .engine import complete as _cmp, parse_model_spec as _pms
     from . import stats as _rag_stats
     _m, _u, _b = _pms(model)
-    _host = (_u or url).replace("http://", "").replace("https://", "")
+    _host = (_u or url or "localhost:11434").replace("http://", "").replace("https://", "")
     for pos in _rag_stats.wait_for_host(_host):
         yield f"_⏳ Waiting in queue... (position {pos})_", rag_full
     yield "_Thinking..._", rag_full
@@ -199,7 +199,7 @@ def _add_to_chat(content, sources, is_new, mode, n_tokens, display_mode,
         return (messages, cid, ctx, f"ctx: {ctx}", hidden_ctx,
                 _gr.update(), _gr.update(visible=False))
 
-    _host = (_u or url).replace("http://", "").replace("https://", "")
+    _host = (_u or url or "localhost:11434").replace("http://", "").replace("https://", "")
     if mode == "summary":
         for _ in _atc_stats.wait_for_host(_host):
             pass
@@ -596,10 +596,10 @@ def _stream_flow(run_fn, lines: list):
 
 
 _JS_SCROLL_TO_PANEL = (
-    "() => { setTimeout(() => {"
+    "(...args) => { setTimeout(() => {"
     " const el = document.getElementById('add_ctx_panel');"
     " if (el) el.scrollIntoView({behavior: 'smooth', block: 'start'});"
-    " }, 100); }"
+    " }, 100); return args; }"
 )
 _JS_SWITCH_TO_CHAT = (
     "() => { setTimeout(() => {"
@@ -647,7 +647,8 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
     _theme_name     = _cfg_now.get("theme", "Monochrome")
     _saved_url      = _cfg_now.get("saved_url", ollama_url)
     _saved_model    = _cfg_now.get("saved_model", None)
-    _saved_backend  = _cfg_now.get("saved_backend", _BACKEND_OLLAMA)
+    _raw_backend    = _cfg_now.get("saved_backend", _BACKEND_OLLAMA)
+    _saved_backend  = _BACKEND_OPENAI if _raw_backend in ("openai", _BACKEND_OPENAI) else _BACKEND_OLLAMA
     _restart_delay  = int(_cfg_now.get("restart_delay", 8))
 
     def _models_with_profile(url: str, bk: str) -> list[str]:
@@ -1088,8 +1089,30 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                         choices=_chat_choices(_hist.list_chats()), value=None
                     )
 
+                def _fix_bare_latex(text: str) -> str:
+                    import re
+                    _CMD = re.compile(
+                        r'^\\(?:boxed|begin\{|frac|dfrac|tfrac|sum|int|prod|lim'
+                        r'|oint|iint|iiint|sqrt|left|right)\b'
+                    )
+                    lines = text.split('\n')
+                    result = []
+                    in_code = False
+                    for line in lines:
+                        stripped = line.strip()
+                        if stripped.startswith('```'):
+                            in_code = not in_code
+                        if (not in_code
+                                and _CMD.match(stripped)
+                                and not stripped.startswith('$')
+                                and not stripped.startswith('\\(')):
+                            line = f'$${stripped}$$'
+                        result.append(line)
+                    return '\n'.join(result)
+
                 def _fmt(text: str, show: bool) -> str:
                     import re
+                    text = _fix_bare_latex(text)
                     think_re = re.compile(r'<think>(.*?)</think>', re.DOTALL)
                     open_re  = re.compile(r'<think>(.*?)$', re.DOTALL)
                     if not show:
@@ -1219,8 +1242,10 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                               g_model, g_url, g_backend,
                               g_thinking, s_timeout, g_incognito]
 
-                send_btn.click(_send,   inputs=_send_in, outputs=_send_out)
-                msg_in.submit(_send,    inputs=_send_in, outputs=_send_out)
+                send_btn.click(_send, inputs=_send_in, outputs=_send_out).then(
+                    _refresh_hist, outputs=[hist_dd])
+                msg_in.submit(_send,  inputs=_send_in, outputs=_send_out).then(
+                    _refresh_hist, outputs=[hist_dd])
                 stop_btn.click(_do_stop, outputs=[])
 
                 new_btn.click(
@@ -1508,7 +1533,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     if not use_llm:
                         return _force_replace(text, glossary)
                     _m, _u, _b = parse_model_spec(model)
-                    _host = (_u or url).replace("http://", "").replace("https://", "")
+                    _host = (_u or url or "localhost:11434").replace("http://", "").replace("https://", "")
                     for _ in _stats.wait_for_host(_host):
                         pass
                     from .adapter import ChatAdapter
@@ -1534,7 +1559,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                         rev = {v: k for k, v in glossary.items()}
                         return _force_replace(text, rev)
                     _m, _u, _b = parse_model_spec(model)
-                    _host = (_u or url).replace("http://", "").replace("https://", "")
+                    _host = (_u or url or "localhost:11434").replace("http://", "").replace("https://", "")
                     for _ in _stats.wait_for_host(_host):
                         pass
                     from .adapter import ChatAdapter
@@ -2803,6 +2828,157 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                 )
                 dam_add_btn.click(lambda c: (c, gr.update(visible=True)), inputs=[dam_out], outputs=[ctx_buffer, add_ctx_panel], js=_JS_SCROLL_TO_PANEL)
                 dam_copy_btn.click(None, inputs=[dam_out], outputs=[], js="async (text) => { await navigator.clipboard.writeText(text || ''); }")
+
+            # ══════════════════════════════════════════════════════════════════
+            # Interview
+            # ══════════════════════════════════════════════════════════════════
+            with gr.Tab(t["interview_tab"]):
+                iv_task    = gr.Textbox(label=t["iv_task_label"],
+                                        placeholder=t["iv_task_ph"], lines=3)
+                with gr.Row():
+                    iv_n    = gr.Slider(1, 20, value=5, step=1,
+                                        label=t["iv_n_label"], scale=3)
+                    iv_file = gr.File(label=t["iv_file_label"],
+                                      file_types=[".md", ".txt"], scale=2)
+                iv_btn    = gr.Button(t["iv_btn"], variant="primary")
+                iv_status = gr.Markdown()
+                iv_qstate = gr.State("[]")
+
+                _IV_MAX   = 20
+                _IV_OTHER = t.get("iv_other", "Other…")
+                iv_radios = []
+                iv_others = []
+                for _iv_i in range(_IV_MAX):
+                    _ivr = gr.Radio(choices=[], label=f"Q{_iv_i + 1}",
+                                    visible=False, interactive=True)
+                    _ivo = gr.Textbox(label=_IV_OTHER, lines=1,
+                                      visible=False, interactive=True,
+                                      placeholder=t.get("iv_other_ph", "Type your answer…"))
+                    iv_radios.append(_ivr)
+                    iv_others.append(_ivo)
+
+                with gr.Row():
+                    iv_add_btn  = gr.Button(t["iv_add_btn"])
+                    iv_copy_btn = gr.Button(t["iv_copy_btn"])
+                iv_copy_out   = gr.Textbox(label="", lines=4,
+                                           visible=False, interactive=False)
+                iv_copy_state = gr.Number(value=0, visible=False)
+
+                def _interview(task, n, file_obj, model, ollama_u, backend_label, timeout):
+                    import json as _json
+                    task = (task or "").strip()
+                    _blank_r = [gr.update(visible=False, choices=[], value=None)] * _IV_MAX
+                    _blank_o = [gr.update(visible=False, value="")] * _IV_MAX
+                    if not task:
+                        yield tuple([t["iv_no_task"], "[]"] + _blank_r + _blank_o)
+                        return
+                    yield tuple([t["iv_generating"], "[]"] + _blank_r + _blank_o)
+                    iv_m, iv_url, iv_bk = parse_model_spec(model)
+                    iv_use_url = iv_url or ollama_u
+                    iv_use_bk  = iv_bk or _backend_key(backend_label)
+                    from .adapter import ChatAdapter
+                    adapter = ChatAdapter(model=iv_m, base_url=iv_use_url,
+                                          backend=iv_use_bk, timeout=int(timeout))
+                    file_content = ""
+                    if file_obj:
+                        try:
+                            file_content = open(file_obj.name, encoding="utf-8").read()
+                        except Exception:
+                            pass
+                    ctx = f"\n\nAdditional context:\n{file_content[:3000]}" if file_content else ""
+                    system = (
+                        f"You are a requirements analyst. Generate exactly {int(n)} clarifying "
+                        "questions that must be answered before implementation begins. "
+                        "For each question provide 2-3 concrete answer options. "
+                        "Output ONLY a valid JSON array — no markdown, no explanation. Format: "
+                        '[{"q": "Question?", "options": ["Option A", "Option B"]}, ...]'
+                    )
+                    raw = adapter._stream_chat([
+                        {"role": "system", "content": system},
+                        {"role": "user",   "content": f"Task: {task}{ctx}"},
+                    ]) or ""
+                    import re as _re
+                    clean = _re.sub(r'^```[a-z]*\n?', '', raw.strip())
+                    clean = _re.sub(r'\n?```\s*$', '', clean).strip()
+                    clean = _re.sub(r'(?<!:)//[^\n]*', '', clean)
+                    clean = _re.sub(r',(\s*[}\]])', r'\1', clean)
+                    try:
+                        questions = _json.loads(clean)
+                    except Exception:
+                        m = _re.search(r'\[.*\]', clean, _re.DOTALL)
+                        questions = _json.loads(m.group(0)) if m else []
+                    questions = [q for q in questions if isinstance(q, dict) and q.get("q")]
+                    radio_updates = []
+                    other_updates = []
+                    for _i in range(_IV_MAX):
+                        if _i < len(questions):
+                            _q = questions[_i]
+                            radio_updates.append(gr.update(
+                                choices=_q.get("options", []) + [_IV_OTHER],
+                                label=f"Q{_i + 1}. {_q['q']}",
+                                visible=True, value=None,
+                            ))
+                            other_updates.append(gr.update(visible=False, value=""))
+                        else:
+                            radio_updates.append(gr.update(visible=False, choices=[], value=None))
+                            other_updates.append(gr.update(visible=False, value=""))
+                    status = (f"_{len(questions)} questions — select answers below._"
+                              if questions else "_No questions generated._")
+                    yield tuple([status, _json.dumps(questions)] + radio_updates + other_updates)
+
+                iv_btn.click(
+                    _interview,
+                    inputs=[iv_task, iv_n, iv_file, g_model, g_url, g_backend, s_timeout],
+                    outputs=[iv_status, iv_qstate] + iv_radios + iv_others,
+                )
+
+                def _make_other_toggle(other_box, other_label):
+                    def _toggle(val):
+                        return gr.update(visible=(val == other_label))
+                    return _toggle
+
+                for _ivr, _ivo in zip(iv_radios, iv_others):
+                    _ivr.change(
+                        _make_other_toggle(_ivo, _IV_OTHER),
+                        inputs=[_ivr], outputs=[_ivo],
+                    )
+
+                def _iv_format(task, qstate, *all_vals):
+                    import json as _json
+                    questions = _json.loads(qstate or "[]")
+                    radio_vals = all_vals[:_IV_MAX]
+                    other_vals = all_vals[_IV_MAX:]
+                    text = f"Task: {(task or '').strip()}\n\n"
+                    for i, q in enumerate(questions):
+                        r = radio_vals[i] if i < len(radio_vals) else None
+                        o = (other_vals[i] or "").strip() if i < len(other_vals) else ""
+                        ans = o if r == _IV_OTHER else (r or "(no answer)")
+                        text += f"Q{i + 1}: {q['q']}\nAnswer: {ans}\n\n"
+                    return text.strip()
+
+                def _iv_add_to_chat(task, qstate, *all_vals):
+                    text = _iv_format(task, qstate, *all_vals)
+                    return text, text, gr.update(visible=True)
+
+                def _iv_copy(counter, task, qstate, *all_vals):
+                    text = _iv_format(task, qstate, *all_vals)
+                    return counter + 1, gr.update(value=text, visible=True)
+
+                iv_add_btn.click(
+                    _iv_add_to_chat,
+                    inputs=[iv_task, iv_qstate] + iv_radios + iv_others,
+                    outputs=[ctx_buffer, ctx_sources, add_ctx_panel],
+                    js=_JS_SCROLL_TO_PANEL,
+                )
+                iv_copy_btn.click(
+                    _iv_copy,
+                    inputs=[iv_copy_state, iv_task, iv_qstate] + iv_radios + iv_others,
+                    outputs=[iv_copy_state, iv_copy_out],
+                )
+                iv_copy_state.change(
+                    None, inputs=[iv_copy_out], outputs=[],
+                    js="async (text) => { await navigator.clipboard.writeText(text || ''); }",
+                )
 
             # ══════════════════════════════════════════════════════════════════
             # Scan (compact)

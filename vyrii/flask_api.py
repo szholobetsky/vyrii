@@ -37,6 +37,46 @@ from .engine import (
 from . import stats as _stats
 
 
+def _parse_interview_questions(text: str):
+    import re, json
+    text = text.strip()
+    text = re.sub(r'^```[a-z]*\n?', '', text)
+    text = re.sub(r'\n?```\s*$', '', text)
+    text = text.strip()
+    text = re.sub(r'(?<!:)//[^\n]*', '', text)
+    text = re.sub(r'(?<!")#[^\n"]*', '', text)
+    text = re.sub(r',(\s*[}\]])', r'\1', text)
+    try:
+        data = json.loads(text)
+        if isinstance(data, list):
+            return [{"q": str(i.get("q", "")).strip(),
+                     "options": [str(o).strip() for o in i.get("options", [])]}
+                    for i in data if isinstance(i, dict) and i.get("q")]
+    except Exception:
+        pass
+    m = re.search(r'\[.*\]', text, re.DOTALL)
+    if m:
+        try:
+            data = json.loads(m.group(0))
+            if isinstance(data, list):
+                return [{"q": str(i.get("q", "")).strip(),
+                         "options": [str(o).strip() for o in i.get("options", [])]}
+                        for i in data if isinstance(i, dict) and i.get("q")]
+        except Exception:
+            pass
+    # regex fallback
+    results = []
+    for qm in re.finditer(r'"q"\s*:\s*"([^"]+)"', text):
+        q = qm.group(1)
+        block = text[qm.end():]
+        opts = [o for o in re.findall(r'"([^"]{5,})"', block[:300])
+                if o not in ('options', 'q')]
+        results.append({"q": q, "options": opts[:4]})
+        if not block.strip().startswith(',') and results:
+            break
+    return results or None
+
+
 def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
                auth: bool = False) -> Flask:
     try:
@@ -548,6 +588,33 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
             try: os.unlink(gpath)
             except Exception: pass
         return jsonify({"result": adapter.last_reply or ""})
+
+    @app.route("/vyrii/interview", methods=["POST"])
+    def interview():
+        from .adapter import ChatAdapter
+        body         = request.get_json(silent=True) or {}
+        task         = body.get("task", "").strip()
+        n            = max(1, min(20, int(body.get("n", 5))))
+        file_content = body.get("file_content", "").strip()
+        model        = body.get("model", "") or _default_model()
+        if not task:
+            return jsonify({"error": "task is required"}), 400
+        ctx    = f"\n\nAdditional context:\n{file_content[:3000]}" if file_content else ""
+        system = (
+            f"You are a requirements analyst. Generate exactly {n} clarifying questions "
+            "that must be answered before implementation begins. For each question provide "
+            "2-3 concrete answer options. Output ONLY a valid JSON array — no markdown, "
+            "no explanation. Format: "
+            '[{"q": "Question?", "options": ["Option A", "Option B"]}, ...]'
+        )
+        user    = f"Task: {task}{ctx}"
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
+        raw     = adapter._stream_chat([{"role": "system", "content": system},
+                                        {"role": "user",   "content": user}]) or ""
+        questions = _parse_interview_questions(raw)
+        if not questions:
+            return jsonify({"error": "Failed to parse questions", "raw": raw[:500]}), 500
+        return jsonify({"questions": questions})
 
     # ── /vyrii/themes ─────────────────────────────────────────────────────────
 

@@ -99,6 +99,12 @@ class WebIndexRequest(BaseModel):
     pages: int = 20
     model: str = ""
 
+class InterviewRequest(BaseModel):
+    task:         str
+    n:            int = 5
+    file_content: str = ""
+    model:        str = ""
+
 class TeamProfileRequest(BaseModel):
     name:    str
     comment: str        = ""
@@ -628,6 +634,59 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         args += f' --depth {req.depth} --pages {req.pages}'
         _wi.run(adapter, args)
         return {"result": adapter.last_reply or "Done."}
+
+    # ── /vyrii/interview ──────────────────────────────────────────────────────
+
+    @app.post("/vyrii/interview")
+    def interview(req: InterviewRequest):
+        import re as _re, json as _json
+        from .adapter import ChatAdapter
+        task = (req.task or "").strip()
+        if not task:
+            return {"error": "task is required"}
+        n = max(1, min(20, req.n))
+        model = req.model or _default_model()
+        ctx = f"\n\nAdditional context:\n{req.file_content[:3000]}" if req.file_content.strip() else ""
+        system = (
+            f"You are a requirements analyst. Generate exactly {n} clarifying "
+            "questions that must be answered before implementation begins. "
+            "For each question provide 2-3 concrete answer options. "
+            "Output ONLY a valid JSON array — no markdown, no explanation. Format: "
+            '[{"q": "Question?", "options": ["Option A", "Option B"]}, ...]'
+        )
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
+        raw = adapter._stream_chat([
+            {"role": "system", "content": system},
+            {"role": "user",   "content": f"Task: {task}{ctx}"},
+        ]) or ""
+        raw = raw.strip()
+        raw = _re.sub(r'^```[a-z]*\n?', '', raw)
+        raw = _re.sub(r'\n?```\s*$', '', raw).strip()
+        raw = _re.sub(r'(?<!:)//[^\n]*', '', raw)
+        raw = _re.sub(r'(?<!")#[^\n"]*', '', raw)
+        raw = _re.sub(r',(\s*[}\]])', r'\1', raw)
+        try:
+            questions = _json.loads(raw)
+            if isinstance(questions, list):
+                questions = [{"q": str(i.get("q", "")).strip(),
+                              "options": [str(o).strip() for o in i.get("options", [])]}
+                             for i in questions if isinstance(i, dict) and i.get("q")]
+                return {"questions": questions}
+        except Exception:
+            pass
+        m = _re.search(r'\[.*\]', raw, _re.DOTALL)
+        if m:
+            try:
+                questions = _json.loads(m.group(0))
+                if isinstance(questions, list):
+                    return {"questions": [
+                        {"q": str(i.get("q", "")).strip(),
+                         "options": [str(o).strip() for o in i.get("options", [])]}
+                        for i in questions if isinstance(i, dict) and i.get("q")
+                    ]}
+            except Exception:
+                pass
+        return {"error": "Failed to parse questions", "raw": raw[:500]}
 
     # ── /vyrii/obfuscate ──────────────────────────────────────────────────────
 

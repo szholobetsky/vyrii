@@ -1187,6 +1187,124 @@ async function runDeepAgent() {
   }
 }
 
+// ── INTERVIEW ─────────────────────────────────────────
+let ivQuestions = [];
+let ivAnswers   = [];
+
+async function runInterview() {
+  const task = (document.getElementById('iv-task')?.value || '').trim();
+  const n    = +(document.getElementById('iv-n')?.value || 5);
+  if (!task) { showToast(t('iv_no_task') || 'Enter a task description'); return; }
+
+  ivQuestions = []; ivAnswers = [];
+  const qbox = document.getElementById('iv-questions');
+  const acts = document.getElementById('iv-actions');
+  if (qbox) qbox.innerHTML = `<span class="placeholder-text">${t('generating') || 'Generating…'}</span>`;
+  if (acts) acts.style.display = 'none';
+
+  try {
+    const res  = await fetch('/vyrii/interview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task, n, model: getModel() }),
+    });
+    const data = await res.json();
+    if (data.error) { if (qbox) qbox.innerHTML = `<span class="error">${data.error}</span>`; return; }
+    ivQuestions = data.questions || [];
+    renderInterviewQuestions();
+  } catch (e) {
+    if (qbox) qbox.innerHTML = `<span class="error">${e.message}</span>`;
+  }
+}
+
+function renderInterviewQuestions() {
+  const container = document.getElementById('iv-questions');
+  if (!container) return;
+  container.innerHTML = '';
+  ivAnswers = new Array(ivQuestions.length).fill(null);
+
+  ivQuestions.forEach((q, i) => {
+    const div = document.createElement('div');
+    div.style.cssText = 'margin:12px 0;padding:12px;border:1px solid var(--border-color,#e0e0e0);border-radius:8px';
+
+    const label = document.createElement('p');
+    label.style.cssText = 'margin:0 0 8px;font-weight:600';
+    label.textContent = `${i + 1}. ${q.q}`;
+    div.appendChild(label);
+
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px';
+    (q.options || []).forEach(opt => {
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-ghost btn-sm iv-opt';
+      btn.textContent = opt;
+      btn.onclick = () => {
+        div.querySelectorAll('.iv-opt').forEach(b => {
+          b.classList.remove('btn-primary');
+          b.classList.add('btn-ghost');
+        });
+        btn.classList.remove('btn-ghost');
+        btn.classList.add('btn-primary');
+        ivAnswers[i] = opt;
+        checkAllAnswered();
+      };
+      btnRow.appendChild(btn);
+    });
+    div.appendChild(btnRow);
+
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.className = 'form-control';
+    inp.placeholder = t('iv_other') || 'Other…';
+    inp.style.marginTop = '4px';
+    inp.oninput = () => {
+      if (inp.value.trim()) {
+        div.querySelectorAll('.iv-opt').forEach(b => {
+          b.classList.remove('btn-primary');
+          b.classList.add('btn-ghost');
+        });
+        ivAnswers[i] = inp.value.trim();
+        checkAllAnswered();
+      }
+    };
+    div.appendChild(inp);
+    container.appendChild(div);
+  });
+}
+
+function checkAllAnswered() {
+  const acts = document.getElementById('iv-actions');
+  if (!acts) return;
+  if (ivAnswers.length > 0 && ivAnswers.every(a => a !== null && a !== ''))
+    acts.style.display = '';
+}
+
+function _formatInterviewText() {
+  const task = (document.getElementById('iv-task')?.value || '').trim();
+  let text = `Task: ${task}\n\n`;
+  ivQuestions.forEach((q, i) => {
+    text += `Q${i + 1}: ${q.q}\nAnswer: ${ivAnswers[i] ?? ''}\n\n`;
+  });
+  return text.trim();
+}
+
+function addInterviewToChat() {
+  const text = _formatInterviewText();
+  if (!text) return;
+  state.chatMessages.push({ role: 'user',      content: `[Interview]\n${text}` });
+  state.chatMessages.push({ role: 'assistant', content: t('ctx_received') });
+  switchTab('chat');
+  renderChatMessages();
+  const box = document.getElementById('chat-messages');
+  if (box) box.scrollTop = box.scrollHeight;
+  showToast(t('ctx_added'));
+}
+
+function copyInterview() {
+  const text = _formatInterviewText();
+  navigator.clipboard.writeText(text).then(() => showToast(t('copied')));
+}
+
 // ── SCAN ──────────────────────────────────────────────
 async function runScan() {
   const path = document.getElementById('sc-path').value.trim();

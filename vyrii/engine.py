@@ -16,8 +16,8 @@ import re as _re
 def parse_model_spec(spec: str) -> tuple[str, str | None, str | None]:
     """Parse 'model@backend://host:port' → (model, base_url, backend_type).
     If no '@', returns (spec, None, None) — caller should use defaults."""
-    if "@" not in spec:
-        return spec, None, None
+    if not spec or "@" not in spec:
+        return spec or "", None, None
     model, rest = spec.split("@", 1)
     m = _re.match(r"(ollama|openai)://(.+)", rest)
     if not m:

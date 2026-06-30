@@ -1,4 +1,4 @@
-![vyrii](images/vyrii2.png)
+![vyrii](https://raw.githubusercontent.com/szholobetsky/simrgl/main/images/logo/vyrii.png)
 
 # vyrii
 
@@ -328,7 +328,7 @@ vyrii/
 
 ## Part of the SIMARGL toolkit
 
-vyrii is one of five tools that together form an **intellectual development support system**:
+vyrii is one of seven tools that together form an **intellectual development support system**:
 
 | Tool | Role |
 |---|---|
@@ -337,6 +337,8 @@ vyrii is one of five tools that together form an **intellectual development supp
 | **[1bcoder](https://github.com/szholobetsky/1bcoder)** | AI coding assistant for small local models — surgical context management, agents, parallel inference, proc scripts |
 | **[yasna](https://github.com/szholobetsky/yasna)** | Session memory — indexes conversations from all AI agents so you can find what was discussed, when, and where |
 | **[radogast](https://github.com/szholobetsky/radogast)** | Context drift monitor — measures how far an AI agent's conversation has drifted from the original task |
+| **[vyrii](https://github.com/szholobetsky/vyrii)** | Local AI web UI — chat, translate, web research, RAG, and file management via Gradio; powered by Ollama or any OpenAI-compatible backend |
+| **[syryn](https://github.com/szholobetsky/syryn)** | Bluetooth identity beacon — returns hostname, mDNS, and active network interfaces for headless devices |
 
 - **simargl** answers: *what code is related to this task?*
 - **svitovyd** answers: *how is the code structured and what depends on what?*
@@ -344,6 +346,7 @@ vyrii is one of five tools that together form an **intellectual development supp
 - **vyrii** answers: *how do I access all of this through a browser?*
 - **yasna** answers: *where did I already discuss this?*
 - **radogast** answers: *is the AI agent still on track toward the goal?*
+- **syryn** answers: *what is the address of this headless device?*
 
 Together they cover the full development loop: understand the codebase, find relevant history, work with AI locally, access everything through a web UI, remember what was decided, and verify the context stays on target.
 

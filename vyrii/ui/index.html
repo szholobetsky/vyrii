@@ -61,6 +61,10 @@
         <span class="ni-icon">📄</span>
         <span class="ni-label" data-i18n="tab_deepagent">DeepAgent</span>
       </button>
+      <button class="nav-item" data-tab="interview">
+        <span class="ni-icon">💬</span>
+        <span class="ni-label" data-i18n="tab_interview">Interview</span>
+      </button>
       <button class="nav-item" data-tab="scan">
         <span class="ni-icon">🔍</span>
         <span class="ni-label" data-i18n="tab_scan">Scan</span>
@@ -492,6 +496,34 @@
         </div>
         <div class="result-box" id="da-result" style="flex:1;min-height:200px">
           <span class="placeholder-text" data-i18n="result_here">Result will appear here…</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── INTERVIEW ── -->
+    <div class="tab-panel" id="tab-interview">
+      <div class="panel-header"><h1 class="ph-title" data-i18n="tab_interview">Interview</h1></div>
+      <div class="panel-body">
+        <div class="form-group">
+          <label class="form-label" data-i18n="iv_task_label">Task description</label>
+          <textarea id="iv-task" class="form-control" rows="3"
+            data-i18n-ph="iv_task_ph" placeholder="Describe what needs to be implemented…"></textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" data-i18n="iv_n_label">Number of questions</label>
+            <input id="iv-n" type="number" class="form-control form-control-sm" value="5" min="1" max="20" style="width:80px">
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" onclick="runInterview()" data-i18n="iv_btn">Generate questions</button>
+        </div>
+        <div id="iv-questions" style="margin:16px 0"></div>
+        <div id="iv-actions" style="display:none;margin-top:12px">
+          <div class="form-actions">
+            <button class="btn btn-ghost" onclick="addInterviewToChat()" data-i18n="iv_add_btn">Add to chat</button>
+            <button class="btn btn-ghost" onclick="copyInterview()" data-i18n="iv_copy_btn">Copy</button>
+          </div>
         </div>
       </div>
     </div>
