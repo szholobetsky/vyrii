@@ -19,7 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 gradio = ["gradio>=6.0"]
 api    = ["fastapi>=0.110", "uvicorn>=0.29", "python-multipart>=0.0.9"]
-web    = ["lxml>=4.9"]
+web    = ["lxml>=4.9"]	
 html   = ["lxml>=4.9", "lxml_html_clean"]
 full   = ["gradio>=6.0", "lxml>=4.9", "lxml_html_clean",
           "fastapi>=0.110", "uvicorn>=0.29", "python-multipart>=0.0.9"]
