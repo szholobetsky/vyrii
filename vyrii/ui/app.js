@@ -1782,6 +1782,8 @@ async function loadSettings() {
     const rEl = document.getElementById(rmode === 'timer' ? 'cfg-reserve-timer' : 'cfg-reserve-response');
     if (rEl) rEl.checked = true;
     set('cfg-reserve-timeout', cfg.reserve_timeout || 600);
+    const rcEl = document.getElementById('restart-cmd-input');
+    if (rcEl && cfg.restart_cmd) rcEl.value = cfg.restart_cmd;
   } catch { /* offline — keep defaults */ }
 }
 
@@ -1855,13 +1857,34 @@ function _sysStatus(msg, isError) {
 }
 
 async function sysRestart() {
-  _sysStatus('Restarting…', false);
+  _sysStatus(t('sys_restarting'), false);
   try {
-    await fetch('/vyrii/system/restart', { method: 'POST' });
-    _sysStatus('Vyrii is restarting. Reloading page in 5 s…', false);
+    await fetch('/vyrii/system/restart-cmd', { method: 'POST',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify({}) });
+    _sysStatus(t('sys_restarting_wait'), false);
     setTimeout(() => location.reload(), 5000);
   } catch {
-    _sysStatus('Restart signal sent. Reload the page manually.', false);
+    _sysStatus(t('sys_restart_sent'), false);
+    setTimeout(() => location.reload(), 5000);
+  }
+}
+
+async function sysRestartCmd() {
+  const cmd = (document.getElementById('restart-cmd-input')?.value || '').trim();
+  if (!cmd) { _sysStatus('Enter a command first.', true); return; }
+  try {
+    await fetch('/vyrii/settings', { method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ restart_cmd: cmd }) });
+  } catch { /* save failed — proceed anyway */ }
+  _sysStatus(t('sys_restarting'), false);
+  try {
+    await fetch('/vyrii/system/restart-cmd', { method: 'POST',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ cmd }) });
+    _sysStatus(t('sys_restarting_wait'), false);
+    setTimeout(() => location.reload(), 5000);
+  } catch {
+    _sysStatus(t('sys_restart_sent'), false);
     setTimeout(() => location.reload(), 5000);
   }
 }

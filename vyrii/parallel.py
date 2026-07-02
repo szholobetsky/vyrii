@@ -7,7 +7,7 @@ import threading
 import time
 from pathlib import Path
 
-from .engine import BACKEND_OLLAMA, BACKEND_OPENAI, complete
+from .engine import BACKEND_OLLAMA, BACKEND_OPENAI, complete, parse_model_spec
 
 # resolved at runtime via init()
 _PROFILES_FILE: Path | None = None
@@ -157,5 +157,6 @@ def compact_results(
         "Combine the following parallel LLM responses into one coherent, "
         "non-redundant answer. Preserve unique insights from each perspective."
     )
+    m_name, m_url, m_bk = parse_model_spec(model)
     msgs = [{"role": "user", "content": f"{sys_msg}\n\n{joined}"}]
-    return complete(msgs, model, url, num_ctx, backend, timeout=timeout)
+    return complete(msgs, m_name, m_url or url, num_ctx, m_bk or backend, timeout=timeout)

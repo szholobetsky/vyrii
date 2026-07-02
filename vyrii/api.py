@@ -221,6 +221,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
     except Exception:
         _cfg_boot = {}
     base_url = _cfg_boot.get("saved_url") or base_url
+    timeout  = int(_cfg_boot.get("timeout", 180))
     _sb = (_cfg_boot.get("saved_backend") or "").lower()
     if _sb in ("openai", "openai-compatible"):
         backend = BACKEND_OPENAI
@@ -331,7 +332,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
                 rid = _stats.record_start(host_label, m_name)
                 try:
                     for chunk in stream_chat(messages, m_name, use_url,
-                                             backend=use_backend):
+                                             backend=use_backend, timeout=timeout):
                         data = {
                             "id": cid, "object": "chat.completion.chunk",
                             "created": created, "model": raw_model,
@@ -356,7 +357,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
             pass
         rid = _stats.record_start(host_label, m_name)
         try:
-            full = complete(messages, m_name, use_url, backend=use_backend)
+            full = complete(messages, m_name, use_url, backend=use_backend, timeout=timeout)
         finally:
             _stats.record_end(rid)
             _stats.auto_release_host(host_label)
@@ -449,7 +450,13 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
 
         # llm mode
         model = req.model or _default_model()
-        if "translategemma" in model.lower():
+        m_name, m_url, m_backend = parse_model_spec(model)
+        model   = m_name
+        use_url = m_url or base_url
+        use_bk  = m_backend or backend
+
+        if "translategemma" in model.lower() and use_bk == BACKEND_OPENAI:
+            # LM Studio-specific structured content format
             import requests as _req
             payload = {
                 "model": model,
@@ -460,18 +467,31 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
                 "stream": False, "temperature": 0.1,
             }
             try:
-                r = _req.post(f"{base_url}/v1/chat/completions", json=payload,
-                              headers={"Authorization": "Bearer lm-studio"}, timeout=60)
+                r = _req.post(f"{use_url}/v1/chat/completions", json=payload,
+                              headers={"Authorization": "Bearer lm-studio"}, timeout=timeout)
                 r.raise_for_status()
                 return {"result": r.json()["choices"][0]["message"]["content"].strip()}
             except Exception as e:
                 return {"error": str(e)}
+
+        if "translategemma" in model.lower():
+            # Ollama: system+user prompt format per translategemma model card
+            src_label = req.from_lang if req.from_lang != "Auto" else "auto-detected"
+            sys_msg = (
+                f"You are a professional {src_label} ({from_code}) to {req.to_lang} ({to_code}) translator. "
+                f"Your goal is to accurately convey the meaning and nuances of the original text "
+                f"while adhering to {req.to_lang} grammar, vocabulary, and cultural sensitivities. "
+                f"Produce only the {req.to_lang} translation, without any additional explanations or commentary."
+            )
+            msgs = [{"role": "system", "content": sys_msg}, {"role": "user", "content": text}]
+            return {"result": complete(msgs, model, use_url, backend=use_bk, timeout=timeout)}
+
         from_clause = f" from {req.from_lang}" if req.from_lang != "Auto" else ""
         prompt = (
             f"Translate the following text{from_clause} to {req.to_lang}. "
             f"Output ONLY the translation — no introduction, no explanation.\n\n{text}"
         )
-        return {"result": complete([{"role": "user", "content": prompt}], model, base_url, backend=backend)}
+        return {"result": complete([{"role": "user", "content": prompt}], model, use_url, backend=use_bk, timeout=timeout)}
 
     # ── /vyrii/webask ─────────────────────────────────────────────────────────
 
@@ -483,6 +503,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         question = req.question.strip()
         if not question:
             return {"error": "question is required"}
+        m_name, m_url, m_bk = parse_model_spec(model)
         if req.url.strip():
             from .tools import fetch_text
             try:
@@ -494,8 +515,8 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
                 f"Question: {question}\n\nAnswer based ONLY on the content above."
             )
             return {"result": complete([{"role": "user", "content": prompt}],
-                                        model, base_url, backend=backend)}
-        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
+                                        m_name, m_url or base_url, backend=m_bk or backend, timeout=timeout)}
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
         _wf.run(adapter, f"{question} -d {req.top_n}")
         return {"result": adapter.last_reply or "No results."}
 
@@ -507,7 +528,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         from .adapter import ChatAdapter
         from .flows import webcrawl as _wcf
         model   = req.model or _default_model()
-        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
 
         _vyrii_home = _wcp.Path.home() / ".vyrii"
         _out_dir = _wcp.Path(req.path.strip()) if req.path.strip() else _vyrii_home / "crawl"
@@ -568,7 +589,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         task = req.task.strip()
         if not task:
             return {"error": "task is required"}
-        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
         import pathlib as _plda
         args = f'"{task}" --maxdepth {req.sections}'
         if req.ref_url.strip():
@@ -591,7 +612,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         query = req.query.strip()
         if not query:
             return {"error": "query is required"}
-        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
         _waf.run(adapter, f'"{query}" -n {req.n}')
         return {"result": adapter.last_reply or "No results."}
 
@@ -602,7 +623,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         from .adapter import ChatAdapter
         from .flows import scan as _sc
         model = req.model or _default_model()
-        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
         path = req.path.strip()
         if not path:
             return {"error": "path is required"}
@@ -622,7 +643,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         from .adapter import ChatAdapter
         from .flows import webindex as _wi
         model = req.model or _default_model()
-        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
         url = req.url.strip()
         if not url or not url.startswith("http"):
             return {"error": "valid url is required"}
@@ -654,7 +675,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
             "Output ONLY a valid JSON array — no markdown, no explanation. Format: "
             '[{"q": "Question?", "options": ["Option A", "Option B"]}, ...]'
         )
-        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
         raw = adapter._stream_chat([
             {"role": "system", "content": system},
             {"role": "user",   "content": f"Task: {task}{ctx}"},
@@ -708,7 +729,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         if not req.glossary.strip():
             return {"error": "glossary is required"}
         model   = req.model or _default_model()
-        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
         adapter._last_output = req.text
         gpath   = _glossary_tempfile(req.glossary)
         args    = f'--glossary {gpath}'
@@ -730,7 +751,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         if not req.glossary.strip():
             return {"error": "glossary is required"}
         model   = req.model or _default_model()
-        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
         adapter._last_output = req.text
         gpath   = _glossary_tempfile(req.glossary)
         args    = f'--glossary {gpath}'
@@ -956,6 +977,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         model = req.model or _default_model()
         if not req.context.strip():
             return {"error": "context is required"}
+        m_name, m_url, m_bk = parse_model_spec(model)
         prompt = (
             f"Use the following sources to answer the question. "
             f"Be concise and cite sources by filename when relevant.\n\n"
@@ -963,8 +985,8 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         )
         try:
             answer = complete([{"role": "user", "content": prompt}],
-                              model, base_url, backend=backend,
-                              num_ctx=8192, timeout=300)
+                              m_name, m_url or base_url, backend=m_bk or backend,
+                              num_ctx=8192, timeout=timeout * 2)
             return {"result": answer}
         except Exception as e:
             return {"error": str(e)}

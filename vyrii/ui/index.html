@@ -857,6 +857,14 @@
 
         <div class="settings-section">
           <div class="settings-title" data-i18n="settings_control">System control</div>
+          <div class="form-row" style="margin-bottom:10px">
+            <label class="form-label" data-i18n="settings_restart_cmd_header">Restart command</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input id="restart-cmd-input" type="text" class="form-input" style="flex:1;font-family:monospace;font-size:13px" placeholder="vyrii --flask">
+              <button class="btn btn-ghost btn-sm" onclick="sysRestartCmd()" data-i18n="settings_restart_cmd_btn">Restart with this command</button>
+            </div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px" data-i18n="settings_restart_cmd_hint">Saved automatically. Default: vyrii --flask</div>
+          </div>
           <div class="form-row" style="align-items:center;gap:16px;flex-wrap:wrap">
             <button class="btn btn-ghost btn-sm" onclick="sysRestart()" data-i18n="sys_restart">Restart vyrii</button>
             <span style="width:1px;height:20px;background:var(--border)"></span>

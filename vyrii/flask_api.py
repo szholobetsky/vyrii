@@ -19,6 +19,8 @@ import os
 import pathlib
 import platform
 import shutil
+import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -84,6 +86,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
     except Exception:
         _cfg_boot = {}
     base_url = _cfg_boot.get("saved_url") or base_url
+    timeout  = int(_cfg_boot.get("timeout", 180))
     _sb = (_cfg_boot.get("saved_backend") or "").lower()
     if _sb in ("openai", "openai-compatible"):
         backend = BACKEND_OPENAI
@@ -189,7 +192,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
                 rid = _stats.record_start(host_label, m_name)
                 try:
                     for chunk in stream_chat(messages, m_name, use_url,
-                                             num_ctx=num_ctx, backend=use_backend):
+                                             num_ctx=num_ctx, backend=use_backend, timeout=timeout):
                         data = {
                             "id": cid, "object": "chat.completion.chunk",
                             "created": created, "model": raw_model,
@@ -214,7 +217,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
             pass
         rid = _stats.record_start(host_label, m_name)
         try:
-            full = complete(messages, m_name, use_url, num_ctx=num_ctx, backend=use_backend)
+            full = complete(messages, m_name, use_url, num_ctx=num_ctx, backend=use_backend, timeout=timeout)
         finally:
             _stats.record_end(rid)
             _stats.auto_release_host(host_label)
@@ -244,6 +247,11 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         model     = body.get("model", "") or _default_model()
         from_code = _LANG_CODES.get(from_lang, from_lang.lower()[:2])
         to_code   = _LANG_CODES.get(to_lang,   to_lang.lower()[:2])
+
+        m_name, m_url, m_backend = parse_model_spec(model)
+        model   = m_name
+        use_url = m_url or base_url
+        use_bk  = m_backend or backend
 
         if mode == "argos":
             try:
@@ -310,7 +318,8 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
                 return jsonify({"error": str(e)})
 
         # llm mode
-        if "translategemma" in model.lower():
+        if "translategemma" in model.lower() and use_bk == BACKEND_OPENAI:
+            # LM Studio-specific structured content format
             import requests as _req
             payload = {
                 "model": model,
@@ -321,12 +330,24 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
                 "stream": False, "temperature": 0.1,
             }
             try:
-                r = _req.post(f"{base_url}/v1/chat/completions", json=payload,
-                              headers={"Authorization": "Bearer lm-studio"}, timeout=60)
+                r = _req.post(f"{use_url}/v1/chat/completions", json=payload,
+                              headers={"Authorization": "Bearer lm-studio"}, timeout=timeout)
                 r.raise_for_status()
                 return jsonify({"result": r.json()["choices"][0]["message"]["content"].strip()})
             except Exception as e:
                 return jsonify({"error": str(e)})
+
+        if "translategemma" in model.lower():
+            # Ollama: system+user prompt format per translategemma model card
+            src_label = from_lang if from_lang != "Auto" else "auto-detected"
+            sys_msg = (
+                f"You are a professional {src_label} ({from_code}) to {to_lang} ({to_code}) translator. "
+                f"Your goal is to accurately convey the meaning and nuances of the original text "
+                f"while adhering to {to_lang} grammar, vocabulary, and cultural sensitivities. "
+                f"Produce only the {to_lang} translation, without any additional explanations or commentary."
+            )
+            msgs = [{"role": "system", "content": sys_msg}, {"role": "user", "content": text}]
+            return jsonify({"result": complete(msgs, model, use_url, backend=use_bk, timeout=timeout)})
 
         from_clause = f" from {from_lang}" if from_lang != "Auto" else ""
         prompt = (
@@ -334,7 +355,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
             f"Output ONLY the translation — no introduction, no explanation.\n\n{text}"
         )
         return jsonify({"result": complete([{"role": "user", "content": prompt}],
-                                           model, base_url, backend=backend)})
+                                           model, use_url, backend=use_bk, timeout=timeout)})
 
     # ── /vyrii/webask ─────────────────────────────────────────────────────────
 
@@ -360,8 +381,8 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
                 f"Question: {question}\n\nAnswer based ONLY on the content above."
             )
             return jsonify({"result": complete([{"role": "user", "content": prompt}],
-                                               model, base_url, backend=backend)})
-        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
+                                               model, base_url, backend=backend, timeout=timeout)})
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
         _wf.run(adapter, f"{question} -d {top_n}")
         return jsonify({"result": adapter.last_reply or "No results."})
 
@@ -385,7 +406,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         format_out = body.get("format_out", "log")
         ask        = body.get("ask", False)
         columns    = body.get("columns", "").strip()
-        adapter    = ChatAdapter(model=model, base_url=base_url, backend=backend)
+        adapter    = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
 
         import time as _wct, pathlib as _wcp
         _vyrii_home = _wcp.Path.home() / ".vyrii"
@@ -451,7 +472,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         rag_proj  = body.get("rag_project", "").strip()
         if not task:
             return jsonify({"error": "task is required"})
-        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
         args = f'"{task}" --maxdepth {sections}'
         if ref_url:
             args += f' --ref {ref_url}'
@@ -475,7 +496,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         n     = body.get("n", 5)
         if not query:
             return jsonify({"error": "query is required"})
-        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
         _waf.run(adapter, f'"{query}" -n {n}')
         return jsonify({"result": adapter.last_reply or "No results."})
 
@@ -496,7 +517,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         ext     = body.get("ext", "").strip()
         if not path:
             return jsonify({"error": "path is required"})
-        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
         args = f'"{path}"'
         if query:
             args += f' --query "{query}"'
@@ -521,7 +542,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         pages   = body.get("pages", 20)
         if not url or not url.startswith("http"):
             return jsonify({"error": "valid url is required"})
-        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
         args = f'"{url}"'
         if project:
             args += f' --project {project}'
@@ -552,7 +573,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         model    = body.get("model", "") or _default_model()
         if not glossary:
             return jsonify({"error": "glossary is required"})
-        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
         adapter._last_output = text
         gpath = _glossary_tmp(glossary)
         args  = f'--glossary {gpath}'
@@ -576,7 +597,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         model    = body.get("model", "") or _default_model()
         if not glossary:
             return jsonify({"error": "glossary is required"})
-        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
         adapter._last_output = text
         gpath = _glossary_tmp(glossary)
         args  = f'--glossary {gpath}'
@@ -608,7 +629,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
             '[{"q": "Question?", "options": ["Option A", "Option B"]}, ...]'
         )
         user    = f"Task: {task}{ctx}"
-        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend)
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
         raw     = adapter._stream_chat([{"role": "system", "content": system},
                                         {"role": "user",   "content": user}]) or ""
         questions = _parse_interview_questions(raw)
@@ -644,14 +665,17 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
 
     @app.route("/vyrii/settings", methods=["GET"])
     def settings_get():
-        return jsonify(_read_cfg())
+        cfg = _read_cfg()
+        if "restart_cmd" not in cfg:
+            cfg["restart_cmd"] = " ".join(sys.argv)
+        return jsonify(cfg)
 
     @app.route("/vyrii/settings", methods=["POST"])
     def settings_save():
         body = request.get_json(silent=True) or {}
         allowed = {"saved_url", "saved_model", "saved_backend", "lang",
                    "theme", "timeout", "worker_timeout", "active_profile",
-                   "reserve_mode", "reserve_timeout"}
+                   "reserve_mode", "reserve_timeout", "restart_cmd"}
         updates = {k: v for k, v in body.items() if k in allowed and v is not None}
         try:
             _write_cfg(updates)
@@ -735,6 +759,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         model = body.get("model") or _default_model()
         if not messages:
             return jsonify({"summary": "", "error": "no messages"})
+        m_name, m_url, m_bk = parse_model_spec(model)
         history_text = "\n\n".join(
             f"{'User' if m['role'] == 'user' else 'Assistant'}: {m.get('content', '')}"
             for m in messages if m.get("content")
@@ -743,7 +768,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
             [{"role": "user", "content":
               "Summarize this conversation concisely, preserving all key "
               "information, decisions, and context:\n\n" + history_text}],
-            model, base_url, backend=backend,
+            m_name, m_url or base_url, backend=m_bk or backend, timeout=timeout,
         )
         return jsonify({"summary": summary})
 
@@ -858,6 +883,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         ctx   = body.get("context", "").strip()
         if not ctx:
             return jsonify({"error": "context is required"})
+        m_name, m_url, m_bk = parse_model_spec(model)
         prompt = (
             f"Use the following sources to answer the question. "
             f"Be concise and cite sources by filename when relevant.\n\n"
@@ -865,8 +891,8 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         )
         try:
             answer = complete([{"role": "user", "content": prompt}],
-                              model, base_url, backend=backend,
-                              num_ctx=8192, timeout=300)
+                              m_name, m_url or base_url, backend=m_bk or backend,
+                              num_ctx=8192, timeout=timeout * 2)
             return jsonify({"result": answer})
         except Exception as e:
             return jsonify({"error": str(e)})
@@ -1105,6 +1131,20 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
             os._exit(0)
         threading.Thread(target=_do, daemon=False).start()
         return jsonify({"ok": True, "message": "Restarting vyrii… reload the page in a few seconds."})
+
+    @app.route("/vyrii/system/restart-cmd", methods=["POST"])
+    def system_restart_cmd():
+        import shlex
+        body = request.get_json(silent=True) or {}
+        cmd_str = body.get("cmd", "").strip()
+        cmd = shlex.split(cmd_str) if cmd_str else sys.argv[:]
+        def _do():
+            import subprocess as _sp
+            time.sleep(1.5)
+            _sp.Popen(cmd, cwd=os.getcwd(), start_new_session=True)
+            os._exit(0)
+        threading.Thread(target=_do, daemon=False).start()
+        return jsonify({"ok": True})
 
     @app.route("/vyrii/system/reboot", methods=["POST"])
     def system_reboot():

@@ -26,7 +26,7 @@ from __future__ import annotations
 import re
 import requests as _requests
 
-from .engine import complete, BACKEND_OLLAMA, DEFAULT_OLLAMA
+from .engine import complete, BACKEND_OLLAMA, DEFAULT_OLLAMA, parse_model_spec
 
 
 class ChatAdapter:
@@ -39,9 +39,10 @@ class ChatAdapter:
         role: str = "You are a helpful assistant.",
         timeout: int = 180,
     ):
-        self._model   = model
-        self._base_url = base_url
-        self._backend  = backend
+        m_name, m_url, m_bk = parse_model_spec(model)
+        self._model    = m_name
+        self._base_url = m_url or base_url
+        self._backend  = m_bk or backend
         self.num_ctx   = num_ctx
         self._role     = role
         self._timeout  = timeout
