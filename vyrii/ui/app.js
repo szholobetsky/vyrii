@@ -1784,6 +1784,12 @@ async function loadSettings() {
     set('cfg-reserve-timeout', cfg.reserve_timeout || 600);
     const rcEl = document.getElementById('restart-cmd-input');
     if (rcEl && cfg.restart_cmd) rcEl.value = cfg.restart_cmd;
+    set('cfg-ollama-kv-cache',   cfg.ollama_kv_cache    || '');
+    set('cfg-ollama-keep-alive', cfg.ollama_keep_alive  || '');
+    set('cfg-ollama-max-loaded', cfg.ollama_max_loaded_models || '');
+    set('cfg-ollama-host',       cfg.ollama_host        || '');
+    const faEl = document.getElementById('cfg-ollama-flash-attn');
+    if (faEl) faEl.checked = !!cfg.ollama_flash_attention;
   } catch { /* offline — keep defaults */ }
 }
 
@@ -1825,6 +1831,11 @@ async function saveSettings() {
     active_profile: document.getElementById('cfg-active-profile').value       || '',
     reserve_mode:   document.querySelector('input[name="reserve-mode"]:checked')?.value || 'response',
     reserve_timeout: +document.getElementById('cfg-reserve-timeout').value   || 600,
+    ollama_kv_cache:          document.getElementById('cfg-ollama-kv-cache')?.value || null,
+    ollama_flash_attention:   document.getElementById('cfg-ollama-flash-attn')?.checked ? 1 : 0,
+    ollama_keep_alive:        document.getElementById('cfg-ollama-keep-alive')?.value.trim() || null,
+    ollama_max_loaded_models: document.getElementById('cfg-ollama-max-loaded')?.value.trim() || null,
+    ollama_host:              document.getElementById('cfg-ollama-host')?.value.trim() || null,
   };
   try {
     const res  = await fetch('/vyrii/settings', {
@@ -1887,6 +1898,20 @@ async function sysRestartCmd() {
     _sysStatus(t('sys_restart_sent'), false);
     setTimeout(() => location.reload(), 5000);
   }
+}
+
+async function ollamaRestart() {
+  const st = document.getElementById('ollama-status');
+  if (st) st.textContent = 'Saving…';
+  await saveSettings();
+  if (st) st.textContent = 'Restarting Ollama…';
+  try {
+    await fetch('/vyrii/system/ollama-restart', { method: 'POST' });
+    if (st) st.textContent = 'Ollama restarting…';
+  } catch {
+    if (st) st.textContent = 'Signal sent (check Ollama logs).';
+  }
+  setTimeout(() => { if (st) st.textContent = ''; }, 5000);
 }
 
 async function sysReboot() {

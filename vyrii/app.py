@@ -3921,6 +3921,73 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     _sys_shutdown, inputs=[s_sys_confirm], outputs=[s_sys_status]
                 )
 
+                gr.Markdown("---\n### Ollama daemon")
+                _cfg_ollama = _load_config()
+                s_ollama_kv = gr.Dropdown(
+                    label="KV cache type (OLLAMA_KV_CACHE_TYPE)",
+                    choices=["", "q8_0", "q4_0", "f16"],
+                    value=_cfg_ollama.get("ollama_kv_cache", ""),
+                    allow_custom_value=True,
+                )
+                s_ollama_flash = gr.Checkbox(
+                    label="Flash attention (OLLAMA_FLASH_ATTENTION=1)",
+                    value=bool(_cfg_ollama.get("ollama_flash_attention", 0)),
+                )
+                s_ollama_keep_alive = gr.Textbox(
+                    label="Keep alive (OLLAMA_KEEP_ALIVE)",
+                    value=_cfg_ollama.get("ollama_keep_alive", ""),
+                    placeholder="e.g. 5m, 1h, -1 (never unload), 0 (immediate)",
+                )
+                s_ollama_max_loaded = gr.Number(
+                    label="Max loaded models (OLLAMA_MAX_LOADED_MODELS)",
+                    precision=0,
+                    value=int(_cfg_ollama["ollama_max_loaded_models"]) if _cfg_ollama.get("ollama_max_loaded_models") else None,
+                )
+                s_ollama_host = gr.Textbox(
+                    label="Host (OLLAMA_HOST)",
+                    value=_cfg_ollama.get("ollama_host", ""),
+                    placeholder="0.0.0.0:11434",
+                )
+                with gr.Row():
+                    s_ollama_save_btn = gr.Button("Save Ollama settings", variant="secondary", scale=2)
+                    s_ollama_rst_btn  = gr.Button("Save & Restart Ollama", variant="primary", scale=2)
+                s_ollama_status = gr.Markdown("")
+
+                def _save_ollama(kv, flash, ka, ml, oh):
+                    import math as _math
+                    _save_config({
+                        "ollama_kv_cache":          kv or "",
+                        "ollama_flash_attention":   1 if flash else 0,
+                        "ollama_keep_alive":        ka or "",
+                        "ollama_max_loaded_models": str(int(ml)) if ml and not _math.isnan(float(ml)) else "",
+                        "ollama_host":              oh or "",
+                    })
+                    return "Saved."
+
+                def _restart_ollama(kv, flash, ka, ml, oh):
+                    import subprocess as _sp, sys as _sys2, time as _t2, math as _math2, os as _os2
+                    _save_ollama(kv, flash, ka, ml, oh)
+                    env = _os2.environ.copy()
+                    if kv: env["OLLAMA_KV_CACHE_TYPE"] = kv
+                    if flash: env["OLLAMA_FLASH_ATTENTION"] = "1"
+                    if ka: env["OLLAMA_KEEP_ALIVE"] = ka
+                    if ml and not _math2.isnan(float(ml)): env["OLLAMA_MAX_LOADED_MODELS"] = str(int(ml))
+                    if oh: env["OLLAMA_HOST"] = oh
+                    if _sys2.platform == "win32":
+                        _sp.run(["taskkill", "/F", "/IM", "ollama.exe"], capture_output=True)
+                    else:
+                        _sp.run(["pkill", "-x", "ollama"], capture_output=True)
+                    _t2.sleep(1)
+                    _sp.Popen(["ollama", "serve"], env=env,
+                              start_new_session=True,
+                              stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+                    return "Ollama restarting…"
+
+                _ollama_inputs = [s_ollama_kv, s_ollama_flash, s_ollama_keep_alive,
+                                  s_ollama_max_loaded, s_ollama_host]
+                s_ollama_save_btn.click(_save_ollama,    inputs=_ollama_inputs, outputs=[s_ollama_status])
+                s_ollama_rst_btn.click( _restart_ollama, inputs=_ollama_inputs, outputs=[s_ollama_status])
+
             # Prompts
             # ══════════════════════════════════════════════════════════════════
             with gr.Tab(t["prompts_tab"]):

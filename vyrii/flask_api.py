@@ -675,7 +675,9 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         body = request.get_json(silent=True) or {}
         allowed = {"saved_url", "saved_model", "saved_backend", "lang",
                    "theme", "timeout", "worker_timeout", "active_profile",
-                   "reserve_mode", "reserve_timeout", "restart_cmd"}
+                   "reserve_mode", "reserve_timeout", "restart_cmd",
+                   "ollama_kv_cache", "ollama_flash_attention",
+                   "ollama_keep_alive", "ollama_max_loaded_models", "ollama_host"}
         updates = {k: v for k, v in body.items() if k in allowed and v is not None}
         try:
             _write_cfg(updates)
@@ -1144,6 +1146,69 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
             _sp.Popen(cmd, cwd=os.getcwd(), start_new_session=True)
             os._exit(0)
         threading.Thread(target=_do, daemon=False).start()
+        return jsonify({"ok": True})
+
+    def _ollama_env() -> dict:
+        cfg = _read_cfg()
+        env = os.environ.copy()
+        kv = cfg.get("ollama_kv_cache", "").strip()
+        if kv: env["OLLAMA_KV_CACHE_TYPE"] = kv
+        if cfg.get("ollama_flash_attention"): env["OLLAMA_FLASH_ATTENTION"] = "1"
+        ka = cfg.get("ollama_keep_alive", "").strip()
+        if ka: env["OLLAMA_KEEP_ALIVE"] = ka
+        ml = str(cfg.get("ollama_max_loaded_models", "")).strip()
+        if ml: env["OLLAMA_MAX_LOADED_MODELS"] = ml
+        oh = cfg.get("ollama_host", "").strip()
+        if oh: env["OLLAMA_HOST"] = oh
+        return env
+
+    def _ollama_persist_windows(env: dict) -> None:
+        """Write Ollama env vars to HKCU\\Environment so any auto-restart picks them up."""
+        import winreg
+        _OLLAMA_VARS = ["OLLAMA_KV_CACHE_TYPE", "OLLAMA_FLASH_ATTENTION",
+                        "OLLAMA_KEEP_ALIVE", "OLLAMA_MAX_LOADED_MODELS", "OLLAMA_HOST"]
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_SET_VALUE)
+        for name in _OLLAMA_VARS:
+            val = env.get(name, "")
+            if val:
+                winreg.SetValueEx(key, name, 0, winreg.REG_SZ, val)
+            else:
+                try: winreg.DeleteValue(key, name)
+                except FileNotFoundError: pass
+        winreg.CloseKey(key)
+
+    @app.route("/vyrii/system/ollama-restart", methods=["POST"])
+    def ollama_restart():
+        import socket as _sock
+        env = _ollama_env()
+        if platform.system() == "Windows":
+            try: _ollama_persist_windows(env)
+            except Exception: pass
+            # Kill existing Ollama
+            subprocess.run(["taskkill", "/F", "/IM", "ollama.exe"], capture_output=True)
+            # Wait until port 11434 is free (catches any auto-restart that grabs the port)
+            for _ in range(20):
+                time.sleep(0.5)
+                try:
+                    s = _sock.socket()
+                    s.bind(("127.0.0.1", 11434))
+                    s.close()
+                    break  # port is free
+                except OSError:
+                    # still occupied — kill whatever grabbed it and try again
+                    subprocess.run(["taskkill", "/F", "/IM", "ollama.exe"], capture_output=True)
+            log_dir = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Ollama")
+            os.makedirs(log_dir, exist_ok=True)
+            log_fh = open(os.path.join(log_dir, "server.log"), "a", encoding="utf-8")
+            subprocess.Popen(["ollama", "serve"], env=env,
+                             start_new_session=True,
+                             stdout=log_fh, stderr=log_fh)
+        else:
+            subprocess.run(["pkill", "-x", "ollama"], capture_output=True)
+            time.sleep(1)
+            subprocess.Popen(["ollama", "serve"], env=env,
+                             start_new_session=True,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return jsonify({"ok": True})
 
     @app.route("/vyrii/system/reboot", methods=["POST"])

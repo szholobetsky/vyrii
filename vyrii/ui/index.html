@@ -856,6 +856,48 @@
         </div>
 
         <div class="settings-section">
+          <div class="settings-title">Ollama daemon</div>
+
+          <div class="form-group">
+            <label class="form-label">KV cache type (OLLAMA_KV_CACHE_TYPE)</label>
+            <select id="cfg-ollama-kv-cache" class="form-control">
+              <option value="">default (f16)</option>
+              <option value="q8_0">q8_0 — half memory, near-lossless</option>
+              <option value="q4_0">q4_0 — quarter memory, lossy</option>
+              <option value="f16">f16 — full quality (explicit)</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="cfg-ollama-flash-attn">
+            <label class="form-label" style="margin:0">Flash attention (OLLAMA_FLASH_ATTENTION=1)</label>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Keep alive (OLLAMA_KEEP_ALIVE)</label>
+            <input id="cfg-ollama-keep-alive" type="text" class="form-control"
+                   placeholder="e.g. 5m, 1h, -1 (never unload), 0 (immediate)">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Max loaded models (OLLAMA_MAX_LOADED_MODELS)</label>
+            <input id="cfg-ollama-max-loaded" type="number" min="1" class="form-control"
+                   placeholder="default: 1 on CPU, 3 on GPU">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Host (OLLAMA_HOST)</label>
+            <input id="cfg-ollama-host" type="text" class="form-control"
+                   placeholder="0.0.0.0:11434">
+          </div>
+
+          <div style="margin-top:8px;display:flex;align-items:center;gap:12px">
+            <button class="btn btn-ghost btn-sm" onclick="ollamaRestart()">Save &amp; Restart Ollama</button>
+            <span id="ollama-status" style="font-size:13px;color:var(--text-muted)"></span>
+          </div>
+        </div>
+
+        <div class="settings-section">
           <div class="settings-title" data-i18n="settings_control">System control</div>
           <div class="form-row" style="margin-bottom:10px">
             <label class="form-label" data-i18n="settings_restart_cmd_header">Restart command</label>

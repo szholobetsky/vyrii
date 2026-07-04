@@ -146,16 +146,22 @@ class FileIndexRequest(BaseModel):
     path: str
 
 class SettingsRequest(BaseModel):
-    saved_url:       str | None = None
-    saved_model:     str | None = None
-    saved_backend:   str | None = None
-    lang:            str | None = None
-    theme:           str | None = None
-    timeout:         int | None = None
-    worker_timeout:  int | None = None
-    active_profile:  str | None = None
-    reserve_mode:    str | None = None
-    reserve_timeout: int | None = None
+    saved_url:                str | None = None
+    saved_model:              str | None = None
+    saved_backend:            str | None = None
+    lang:                     str | None = None
+    theme:                    str | None = None
+    timeout:                  int | None = None
+    worker_timeout:           int | None = None
+    active_profile:           str | None = None
+    reserve_mode:             str | None = None
+    reserve_timeout:          int | None = None
+    restart_cmd:              str | None = None
+    ollama_kv_cache:          str | None = None
+    ollama_flash_attention:   int | None = None
+    ollama_keep_alive:        str | None = None
+    ollama_max_loaded_models: str | None = None
+    ollama_host:              str | None = None
 
 class LockRequest(BaseModel):
     host:   str
@@ -1211,6 +1217,61 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
             _os4._exit(0)
         _threading.Thread(target=_do, daemon=False).start()
         return {"ok": True, "message": "Restarting vyrii… reload the page in a few seconds."}
+
+    def _ollama_env() -> dict:
+        cfg = _read_cfg()
+        env = _os4.environ.copy()
+        kv = cfg.get("ollama_kv_cache", "").strip()
+        if kv: env["OLLAMA_KV_CACHE_TYPE"] = kv
+        if cfg.get("ollama_flash_attention"): env["OLLAMA_FLASH_ATTENTION"] = "1"
+        ka = cfg.get("ollama_keep_alive", "").strip()
+        if ka: env["OLLAMA_KEEP_ALIVE"] = ka
+        ml = str(cfg.get("ollama_max_loaded_models", "")).strip()
+        if ml: env["OLLAMA_MAX_LOADED_MODELS"] = ml
+        oh = cfg.get("ollama_host", "").strip()
+        if oh: env["OLLAMA_HOST"] = oh
+        return env
+
+    def _ollama_persist_windows(env: dict) -> None:
+        import winreg as _wr
+        _VARS = ["OLLAMA_KV_CACHE_TYPE", "OLLAMA_FLASH_ATTENTION",
+                 "OLLAMA_KEEP_ALIVE", "OLLAMA_MAX_LOADED_MODELS", "OLLAMA_HOST"]
+        key = _wr.OpenKey(_wr.HKEY_CURRENT_USER, "Environment", 0, _wr.KEY_SET_VALUE)
+        for name in _VARS:
+            val = env.get(name, "")
+            if val:
+                _wr.SetValueEx(key, name, 0, _wr.REG_SZ, val)
+            else:
+                try: _wr.DeleteValue(key, name)
+                except FileNotFoundError: pass
+        _wr.CloseKey(key)
+
+    @app.post("/vyrii/system/ollama-restart")
+    def ollama_restart():
+        import subprocess as _sp, time as _t, socket as _sock
+        env = _ollama_env()
+        if _platform.system() == "Windows":
+            try: _ollama_persist_windows(env)
+            except Exception: pass
+            _sp.run(["taskkill", "/F", "/IM", "ollama.exe"], capture_output=True)
+            for _ in range(20):
+                _t.sleep(0.5)
+                try:
+                    s = _sock.socket(); s.bind(("127.0.0.1", 11434)); s.close(); break
+                except OSError:
+                    _sp.run(["taskkill", "/F", "/IM", "ollama.exe"], capture_output=True)
+            log_dir = _os4.path.join(_os4.environ.get("LOCALAPPDATA", ""), "Ollama")
+            _os4.makedirs(log_dir, exist_ok=True)
+            log_fh = open(_os4.path.join(log_dir, "server.log"), "a", encoding="utf-8")
+            _sp.Popen(["ollama", "serve"], env=env,
+                      start_new_session=True, stdout=log_fh, stderr=log_fh)
+        else:
+            _sp.run(["pkill", "-x", "ollama"], capture_output=True)
+            _t.sleep(1)
+            _sp.Popen(["ollama", "serve"], env=env,
+                      start_new_session=True,
+                      stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+        return {"ok": True}
 
     @app.post("/vyrii/system/reboot")
     def system_reboot(req: SystemConfirmRequest):
