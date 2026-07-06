@@ -1044,3 +1044,17 @@ select.form-control { cursor: pointer; }
 .md-table th {
   font-weight: 600;
 }
+.ctxtimer-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin: 8px 0;
+}
+.ctxtimer-table th, .ctxtimer-table td {
+  padding: 4px 10px;
+  border: 1px solid var(--text-muted, #8aa);
+  color: var(--text, #d8dee9);
+}
+.ctxtimer-table th {
+  font-weight: 600;
+}

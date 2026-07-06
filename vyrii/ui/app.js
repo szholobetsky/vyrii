@@ -1790,6 +1790,16 @@ async function loadSettings() {
     set('cfg-ollama-host',       cfg.ollama_host        || '');
     const faEl = document.getElementById('cfg-ollama-flash-attn');
     if (faEl) faEl.checked = !!cfg.ollama_flash_attention;
+    const vkEl = document.getElementById('cfg-ollama-vulkan');
+    if (vkEl) vkEl.checked = !!cfg.ollama_vulkan;
+    const igEl = document.getElementById('cfg-ollama-igpu');
+    if (igEl) igEl.checked = !!cfg.ollama_igpu_enable;
+    const acEl = document.getElementById('cfg-autocut-enabled');
+    if (acEl) acEl.checked = !!cfg.autocut_enabled;
+    set('cfg-autocut-first', cfg.autocut_first ?? 0);
+    set('cfg-autocut-last',  cfg.autocut_last  ?? 2000);
+    set('cfg-autocut-limit', cfg.autocut_limit ?? 500);
+    set('cfg-autocut-algo',  cfg.autocut_algo  || 'bm25');
   } catch { /* offline — keep defaults */ }
 }
 
@@ -1836,6 +1846,13 @@ async function saveSettings() {
     ollama_keep_alive:        document.getElementById('cfg-ollama-keep-alive')?.value.trim() || null,
     ollama_max_loaded_models: document.getElementById('cfg-ollama-max-loaded')?.value.trim() || null,
     ollama_host:              document.getElementById('cfg-ollama-host')?.value.trim() || null,
+    ollama_vulkan:            document.getElementById('cfg-ollama-vulkan')?.checked ? 1 : 0,
+    ollama_igpu_enable:       document.getElementById('cfg-ollama-igpu')?.checked ? 1 : 0,
+    autocut_enabled:          document.getElementById('cfg-autocut-enabled')?.checked ? 1 : 0,
+    autocut_first:            +document.getElementById('cfg-autocut-first')?.value || 0,
+    autocut_last:             +document.getElementById('cfg-autocut-last')?.value || 0,
+    autocut_limit:            +document.getElementById('cfg-autocut-limit')?.value || 0,
+    autocut_algo:             document.getElementById('cfg-autocut-algo')?.value || 'bm25',
   };
   try {
     const res  = await fetch('/vyrii/settings', {
@@ -1912,6 +1929,16 @@ async function ollamaRestart() {
     if (st) st.textContent = 'Signal sent (check Ollama logs).';
   }
   setTimeout(() => { if (st) st.textContent = ''; }, 5000);
+}
+
+async function autocutSave() {
+  const st = document.getElementById('autocut-status');
+  if (st) st.textContent = 'Saving…';
+  await saveSettings();
+  if (st) {
+    st.textContent = 'Saved.';
+    setTimeout(() => { st.textContent = ''; }, 2500);
+  }
 }
 
 async function sysReboot() {
@@ -2697,4 +2724,132 @@ function prmCopy(id) {
   const p = _prmAll.find(x => x.id === id);
   if (!p) return;
   navigator.clipboard.writeText(p.prompt).then(() => showToast(t('copied')));
+}
+
+// ── CTXTIMER (Settings > Diagnostics) ─────────────────────────────────────
+
+let _ctRunId = null;
+
+async function ctxtimerRun() {
+  const body = {
+    mode:  document.getElementById('ct-mode').value,
+    full:  document.getElementById('ct-full').checked,
+    start: Number(document.getElementById('ct-start').value) || 1000,
+    end:   document.getElementById('ct-end').value ? Number(document.getElementById('ct-end').value) : null,
+    step:  Number(document.getElementById('ct-step').value) || 1000,
+    model: getModel(),
+  };
+  document.getElementById('ctxtimer-progress-log').innerHTML = '';
+  document.getElementById('ctxtimer-results').innerHTML = '';
+  document.getElementById('ctxtimer-status').textContent = 'Running…';
+  document.getElementById('ct-cancel-btn').style.display = 'inline-block';
+
+  try {
+    const res = await fetch('/vyrii/ctxtimer/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    await _readCtxtimerSSE(res);
+  } catch (e) {
+    document.getElementById('ctxtimer-status').textContent = t('error_prefix') + e.message;
+  }
+  document.getElementById('ct-cancel-btn').style.display = 'none';
+  _ctRunId = null;
+}
+
+async function ctxtimerCancel() {
+  if (!_ctRunId) return;
+  try {
+    await fetch('/vyrii/ctxtimer/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ run_id: _ctRunId }),
+    });
+  } catch { /* ignore */ }
+}
+
+async function _readCtxtimerSSE(res) {
+  const reader  = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  const rows = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop() ?? '';
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      let item;
+      try { item = JSON.parse(line.slice(6)); } catch { continue; }
+
+      if (item.type === 'started') {
+        _ctRunId = item.run_id;
+      } else if (item.type === 'progress') {
+        rows.push(item);
+        const log = document.getElementById('ctxtimer-progress-log');
+        const d = document.createElement('div');
+        d.textContent = `${item.tokens.toLocaleString()} tokens — ${item.status.toUpperCase()}`
+                       + (item.error ? ` (${item.error})` : '');
+        log.appendChild(d);
+        log.scrollTop = log.scrollHeight;
+      } else if (item.type === 'done') {
+        _renderCtxtimerTable(rows);
+        const maxOk = item.max_success_tokens;
+        let msg = maxOk ? `Max safe context: ${maxOk.toLocaleString()} tokens` : 'All sizes failed.';
+        if (item.cancelled) msg += ' (cancelled)';
+        document.getElementById('ctxtimer-status').textContent = msg;
+      } else if (item.type === 'error') {
+        document.getElementById('ctxtimer-status').textContent = 'Error: ' + item.text;
+      }
+    }
+  }
+}
+
+function _renderCtxtimerTable(rows) {
+  let h = '<table class="ctxtimer-table"><thead><tr><th>Tokens</th><th>Status</th><th>Error</th></tr></thead><tbody>';
+  rows.forEach(r => {
+    h += `<tr><td>${r.tokens.toLocaleString()}</td><td>${r.status === 'ok' ? '✓ OK' : '✗ FAIL'}</td><td>${escHtml(r.error || '')}</td></tr>`;
+  });
+  h += '</tbody></table>';
+  document.getElementById('ctxtimer-results').innerHTML = h;
+}
+
+async function ctxtimerReportShow() {
+  try {
+    const res  = await fetch('/vyrii/ctxtimer/report');
+    const data = await res.json();
+    const rows = data.rows || [];
+    if (!rows.length) {
+      document.getElementById('ctxtimer-report-table').innerHTML = '<div style="font-size:12px;color:var(--text-muted)">No results yet.</div>';
+      return;
+    }
+    let h = '<table class="ctxtimer-table"><thead><tr><th>Time</th><th>Model</th><th>Provider</th>'
+          + '<th>Timeout</th><th>Max ctx</th><th>Mode</th><th>Range</th></tr></thead><tbody>';
+    rows.forEach(r => {
+      h += `<tr><td>${escHtml(r.timestamp)}</td><td>${escHtml(r.model)}</td><td>${escHtml(r.provider)}</td>`
+         + `<td>${escHtml(r.timeout_s)}</td><td>${escHtml(r.max_context_tokens)}</td><td>${escHtml(r.search_mode)}</td>`
+         + `<td>${escHtml(r.start_tokens)}–${escHtml(r.end_tokens)}</td></tr>`;
+    });
+    h += '</tbody></table>';
+    document.getElementById('ctxtimer-report-table').innerHTML = h;
+  } catch (e) {
+    showToast(t('error_prefix') + e.message);
+  }
+}
+
+async function ctxtimerReportClear() {
+  if (!document.getElementById('ct-clear-confirm').checked) {
+    showToast('Check the confirmation box first.');
+    return;
+  }
+  try {
+    await fetch('/vyrii/ctxtimer/report', { method: 'DELETE' });
+    document.getElementById('ctxtimer-report-table').innerHTML = '';
+    showToast('Report cleared.');
+  } catch (e) {
+    showToast(t('error_prefix') + e.message);
+  }
 }

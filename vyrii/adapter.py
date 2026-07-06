@@ -53,10 +53,27 @@ class ChatAdapter:
 
     # ── LLM ──────────────────────────────────────────────────────────────────
 
-    def _stream_chat(self, messages: list[dict]) -> str:
+    def _stream_chat(self, messages: list[dict], options: dict | None = None,
+                      raise_errors: bool = False) -> str:
         return complete(messages, self._model, self._base_url,
                         num_ctx=self.num_ctx, backend=self._backend,
-                        timeout=self._timeout)
+                        timeout=self._timeout, options=options, raise_errors=raise_errors)
+
+    # ── read-only aliases matching 1bcoder's chat object attribute names ─────
+    # (chat.model / chat.provider / chat.timeout, no leading underscore) so
+    # ported code (e.g. ctxtimer's report logging) can use the same names.
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    @property
+    def provider(self) -> str:
+        return self._backend
+
+    @property
+    def timeout(self) -> int:
+        return self._timeout
 
     def _sep(self, label: str = "") -> None:
         pass  # no-op: vyrii renders output differently

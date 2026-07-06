@@ -193,10 +193,12 @@ def _add_to_chat(content, sources, is_new, mode, n_tokens, display_mode,
     from . import history as _hist_atc
     from .engine import complete as _complete_atc, smart_ctx as _sctx_atc, parse_model_spec as _pms_atc
     from . import stats as _atc_stats
+    from .engine import CTX_START as _CTX_START_ATC
     _m, _u, _b = _pms_atc(model)
+    ctx = int(ctx) if ctx else _CTX_START_ATC
     content = (content or "").strip()
     if not content:
-        return (messages, cid, ctx, f"ctx: {ctx}", hidden_ctx,
+        return (messages, cid, ctx, hidden_ctx,
                 _gr.update(), _gr.update(visible=False))
 
     _host = (_u or url or "localhost:11434").replace("http://", "").replace("https://", "")
@@ -239,7 +241,7 @@ def _add_to_chat(content, sources, is_new, mode, n_tokens, display_mode,
 
     new_ctx = _sctx_atc(messages, ctx)
     new_hist = _gr.Dropdown(choices=_chat_choices(_hist_atc.list_chats()))
-    return (messages, cid, new_ctx, f"ctx: {new_ctx}", new_hidden,
+    return (messages, cid, new_ctx, new_hidden,
             new_hist, _gr.update(visible=False))
 
 
@@ -908,8 +910,17 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                                 scale=4, lines=1,
                             )
                             hist_search_btn = gr.Button(t["search_btn"], size="sm", scale=1)
-                        ctx_lbl  = gr.Textbox(value="ctx: 2048", label="Context",
-                                              interactive=False)
+                        ctx_mode = gr.Radio(
+                            choices=["smart", "fixed"], value="smart",
+                            label="Context mode",
+                            info="smart: grows automatically as the conversation needs more. "
+                                 "fixed: stays at your number, but still auto-bumps for a single "
+                                 "reply if the model would otherwise get truncated.",
+                        )
+                        ctx_lbl  = gr.Number(
+                            value=CTX_START, label="Context (tokens)",
+                            precision=0, interactive=True,
+                        )
 
                     # main area
                     with gr.Column(scale=4):
@@ -947,9 +958,10 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                             )
 
                 # state: chatbot holds the full messages list;
-                # s_cid and s_ctx are extras
+                # s_cid is an extra. ctx_lbl (Number, in the sidebar) doubles as the
+                # current-context-window state — it's both user-editable and the
+                # live display, read directly as an input wherever s_ctx used to be.
                 s_cid = gr.State(None)      # current chat_id or None
-                s_ctx = gr.State(CTX_START) # current context window size
 
                 # ── handlers ──────────────────────────────────────────────────
 
@@ -988,7 +1000,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
 
                 def _compact_chat(messages, ctx, model, url, backend_label, timeout):
                     if not messages:
-                        return messages, ctx, f"ctx: {ctx}"
+                        return messages, ctx
                     m_name, m_url, m_bk = parse_model_spec(model)
                     use_url = m_url or url
                     use_bk = m_bk or _backend_key(backend_label)
@@ -1016,7 +1028,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                          "content": t["compacted_context"]},
                     ]
                     new_ctx = max(512, int(ctx) // 4)
-                    return new_messages, new_ctx, f"ctx: {new_ctx}"
+                    return new_messages, new_ctx
 
                 def _load_text_file(file_obj, messages):
                     if file_obj is None:
@@ -1048,8 +1060,8 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                 )
                 compact_btn.click(
                     _compact_chat,
-                    inputs=[chatbot, s_ctx, g_model, g_url, g_backend, s_timeout],
-                    outputs=[chatbot, s_ctx, ctx_lbl],
+                    inputs=[chatbot, ctx_lbl, g_model, g_url, g_backend, s_timeout],
+                    outputs=[chatbot, ctx_lbl],
                 )
                 load_text_btn.upload(
                     _load_text_file,
@@ -1068,18 +1080,17 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     return (
                         [],          # chatbot
                         None,        # s_cid
-                        2048,        # s_ctx
-                        "ctx: 2048", # ctx_lbl
+                        CTX_START,   # ctx_lbl
                         gr.Dropdown(choices=_chat_choices(_hist.list_chats()), value=None),
                     )
 
                 def _load_chat(choice):
                     cid = _parse_id(choice)
                     if cid is None:
-                        return [], None, CTX_START, f"ctx: {CTX_START}"
+                        return [], None, CTX_START
                     msgs = _hist.get_messages(cid)
                     ctx = smart_ctx(msgs)
-                    return msgs, cid, ctx, f"ctx: {ctx}"
+                    return msgs, cid, ctx
 
                 def _delete_chat(choice):
                     cid = _parse_id(choice)
@@ -1139,12 +1150,13 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                 def _do_stop():
                     _stop_gen.set()
 
-                def _send(user_msg, messages, cid, ctx, hidden_ctx, model, url, backend_label,
-                          show_thinking, timeout, incognito):
+                def _send(user_msg, messages, cid, ctx, ctx_mode, hidden_ctx, model, url,
+                          backend_label, show_thinking, timeout, incognito):
                     _stop_gen.clear()
+                    ctx = int(ctx) if ctx else CTX_START
                     user_msg = user_msg.strip()
                     if not user_msg:
-                        yield messages, cid, ctx, f"ctx: {ctx}", ""
+                        yield messages, cid, ctx, ""
                         return
 
                     m_name, m_url, m_bk = parse_model_spec(model)
@@ -1161,12 +1173,29 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
 
                     # show user message + thinking indicator immediately
                     messages = list(messages) + [{"role": "user", "content": user_msg}]
+                    # smart_ctx(messages, ctx) never returns less than `ctx` — so the actual
+                    # request always gets enough room to avoid Ollama silently truncating the
+                    # reply once qwen3-style thinking blocks fill up a too-small context.
+                    # "fixed" mode keeps the displayed/stored floor pinned at the user's number
+                    # (no turn-over-turn creep); "smart" mode lets the floor itself grow.
                     new_ctx = smart_ctx(messages, ctx)
+                    display_ctx = ctx if ctx_mode == "fixed" else new_ctx
                     display = messages + [{"role": "assistant", "content": "..."}]
-                    yield display, cid, new_ctx, f"ctx: {new_ctx}", ""
+                    yield display, cid, display_ctx, ""
 
                     rag_display = ""
                     send_msgs = base_msgs + [{"role": "user", "content": user_msg}]
+
+                    _cfg_autocut = _load_config()
+                    if _cfg_autocut.get("autocut_enabled"):
+                        from . import ctxwindow
+                        send_msgs = ctxwindow.apply_autocut(
+                            send_msgs, enabled=True,
+                            first=int(_cfg_autocut.get("autocut_first") or 0),
+                            last=int(_cfg_autocut.get("autocut_last") or 2000),
+                            algo=_cfg_autocut.get("autocut_algo") or "bm25",
+                            limit=int(_cfg_autocut.get("autocut_limit") or 500),
+                        )
 
                     if not incognito:
                         if cid is None:
@@ -1186,6 +1215,17 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                                                   use_bk,
                                                   thinking=show_thinking,
                                                   timeout=int(timeout)):
+                                if _stop_gen.is_set():
+                                    # Abandon the stream_chat() generator right here so it
+                                    # gets garbage-collected (CPython: immediately, via
+                                    # refcounting) and its `with requests.post(...)` block
+                                    # unwinds, closing the actual HTTP connection to Ollama.
+                                    # Without this, the [Stop] button only stopped the UI
+                                    # from displaying more chunks — Ollama kept generating
+                                    # the abandoned response in the background, tying up
+                                    # its single generation slot and making the *next*
+                                    # request sit queued behind it.
+                                    break
                                 _chunk_q.put(("chunk", _c))
                         except Exception as _e:
                             _chunk_q.put(("error", str(_e)))
@@ -1207,7 +1247,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                                 display = messages + [{"role": "assistant",
                                                        "content": f"{_spin[_si % 10]} _Thinking..._"}]
                                 _si += 1
-                                yield display, cid, new_ctx, f"ctx: {new_ctx}", ""
+                                yield display, cid, display_ctx, ""
                             continue
                         if kind == "done":
                             break
@@ -1215,18 +1255,18 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                             _in_queue = True
                             display = messages + [{"role": "assistant",
                                                    "content": f"⏳ Waiting in queue... (position {val})"}]
-                            yield display, cid, new_ctx, f"ctx: {new_ctx}", ""
+                            yield display, cid, display_ctx, ""
                             continue
                         if _in_queue:
                             _in_queue = False
                         if kind == "error":
                             display = messages + [{"role": "assistant", "content": f"Error: {val}"}]
-                            yield display, cid, new_ctx, f"ctx: {new_ctx}", ""
+                            yield display, cid, display_ctx, ""
                             return
                         full += val
                         display = messages + [{"role": "assistant",
                                                "content": _fmt(full, show_thinking)}]
-                        yield display, cid, new_ctx, f"ctx: {new_ctx}", ""
+                        yield display, cid, display_ctx, ""
 
                     if full:
                         messages = messages + [{"role": "assistant", "content": full}]
@@ -1235,10 +1275,10 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     display = messages[:]
                     display[-1] = {"role": "assistant",
                                    "content": _fmt(full, show_thinking) + rag_display}
-                    yield display, cid, new_ctx, f"ctx: {new_ctx}", ""
+                    yield display, cid, display_ctx, ""
 
-                _send_out = [chatbot, s_cid, s_ctx, ctx_lbl, msg_in]
-                _send_in  = [msg_in, chatbot, s_cid, s_ctx, s_hidden_ctx,
+                _send_out = [chatbot, s_cid, ctx_lbl, msg_in]
+                _send_in  = [msg_in, chatbot, s_cid, ctx_lbl, ctx_mode, s_hidden_ctx,
                               g_model, g_url, g_backend,
                               g_thinking, s_timeout, g_incognito]
 
@@ -1248,15 +1288,44 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     _refresh_hist, outputs=[hist_dd])
                 stop_btn.click(_do_stop, outputs=[])
 
+                def _retry_pop(messages, cid):
+                    """Pop the last user+assistant turn (mirrors the web UI's retryMsg()
+                    and Gradio's own ChatInterface._pop_last_user_message) so the normal
+                    _send() flow can regenerate it as a fresh turn."""
+                    if not messages:
+                        return messages, "", cid
+                    msgs = list(messages)
+                    i = len(msgs) - 1
+                    while i >= 0 and msgs[i]["role"] == "assistant":
+                        i -= 1
+                    while i >= 0 and msgs[i]["role"] == "user":
+                        i -= 1
+                    popped = msgs[i + 1:]
+                    user_text = next((m["content"] for m in popped if m["role"] == "user"), "")
+                    remaining = msgs[:i + 1]
+                    if cid is not None and popped:
+                        _hist.delete_last_messages(cid, len(popped))
+                    return remaining, user_text, cid
+
+                chatbot.retry(
+                    _retry_pop,
+                    inputs=[chatbot, s_cid],
+                    outputs=[chatbot, msg_in, s_cid],
+                    queue=False,
+                ).then(
+                    _send, inputs=_send_in, outputs=_send_out,
+                ).then(
+                    _refresh_hist, outputs=[hist_dd])
+
                 new_btn.click(
                     _new_chat,
-                    outputs=[chatbot, s_cid, s_ctx, ctx_lbl, hist_dd],
+                    outputs=[chatbot, s_cid, ctx_lbl, hist_dd],
                 )
                 refr_btn.click(_refresh_hist, outputs=[hist_dd])
                 load_btn.click(
                     _load_chat,
                     inputs=[hist_dd],
-                    outputs=[chatbot, s_cid, s_ctx, ctx_lbl],
+                    outputs=[chatbot, s_cid, ctx_lbl],
                 )
                 del_btn.click(_delete_chat, inputs=[hist_dd], outputs=[hist_dd])
 
@@ -2022,7 +2091,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     _team_run,
                     inputs=[team_profile_dd, team_query, team_ctx_mode, team_combine]
                            + team_aspect_inputs
-                           + [chatbot, s_ctx, g_model, g_url, g_backend, s_timeout],
+                           + [chatbot, ctx_lbl, g_model, g_url, g_backend, s_timeout],
                     outputs=[team_progress, team_result_md, team_result_ctx],
                 )
                 team_clear_btn.click(
@@ -3880,8 +3949,8 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     import threading as _thr
                     import subprocess as _sp
                     def _relaunch():
-                        _sp.Popen(_sys.argv, cwd=os.getcwd())
-                        os._exit(0)
+                        _sp.Popen(_sys.argv, cwd=_os.getcwd())
+                        _os._exit(0)
                     _thr.Timer(1.5, _relaunch).start()
                     return t.get("settings_restarting", "Restarting…")
 
@@ -3948,12 +4017,20 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     value=_cfg_ollama.get("ollama_host", ""),
                     placeholder="0.0.0.0:11434",
                 )
+                s_ollama_vulkan = gr.Checkbox(
+                    label="Vulkan backend (OLLAMA_VULKAN=1)",
+                    value=bool(_cfg_ollama.get("ollama_vulkan", 0)),
+                )
+                s_ollama_igpu = gr.Checkbox(
+                    label="Enable integrated GPU (OLLAMA_IGPU_ENABLE=1)",
+                    value=bool(_cfg_ollama.get("ollama_igpu_enable", 0)),
+                )
                 with gr.Row():
                     s_ollama_save_btn = gr.Button("Save Ollama settings", variant="secondary", scale=2)
                     s_ollama_rst_btn  = gr.Button("Save & Restart Ollama", variant="primary", scale=2)
                 s_ollama_status = gr.Markdown("")
 
-                def _save_ollama(kv, flash, ka, ml, oh):
+                def _save_ollama(kv, flash, ka, ml, oh, vulkan, igpu):
                     import math as _math
                     _save_config({
                         "ollama_kv_cache":          kv or "",
@@ -3961,18 +4038,22 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                         "ollama_keep_alive":        ka or "",
                         "ollama_max_loaded_models": str(int(ml)) if ml and not _math.isnan(float(ml)) else "",
                         "ollama_host":              oh or "",
+                        "ollama_vulkan":            1 if vulkan else 0,
+                        "ollama_igpu_enable":       1 if igpu else 0,
                     })
                     return "Saved."
 
-                def _restart_ollama(kv, flash, ka, ml, oh):
+                def _restart_ollama(kv, flash, ka, ml, oh, vulkan, igpu):
                     import subprocess as _sp, sys as _sys2, time as _t2, math as _math2, os as _os2
-                    _save_ollama(kv, flash, ka, ml, oh)
+                    _save_ollama(kv, flash, ka, ml, oh, vulkan, igpu)
                     env = _os2.environ.copy()
                     if kv: env["OLLAMA_KV_CACHE_TYPE"] = kv
                     if flash: env["OLLAMA_FLASH_ATTENTION"] = "1"
                     if ka: env["OLLAMA_KEEP_ALIVE"] = ka
                     if ml and not _math2.isnan(float(ml)): env["OLLAMA_MAX_LOADED_MODELS"] = str(int(ml))
                     if oh: env["OLLAMA_HOST"] = oh
+                    env["OLLAMA_VULKAN"] = "1" if vulkan else "0"
+                    env["OLLAMA_IGPU_ENABLE"] = "1" if igpu else "0"
                     if _sys2.platform == "win32":
                         _sp.run(["taskkill", "/F", "/IM", "ollama.exe"], capture_output=True)
                     else:
@@ -3984,9 +4065,160 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     return "Ollama restarting…"
 
                 _ollama_inputs = [s_ollama_kv, s_ollama_flash, s_ollama_keep_alive,
-                                  s_ollama_max_loaded, s_ollama_host]
+                                  s_ollama_max_loaded, s_ollama_host,
+                                  s_ollama_vulkan, s_ollama_igpu]
                 s_ollama_save_btn.click(_save_ollama,    inputs=_ollama_inputs, outputs=[s_ollama_status])
                 s_ollama_rst_btn.click( _restart_ollama, inputs=_ollama_inputs, outputs=[s_ollama_status])
+
+                gr.Markdown("---\n### AutoCut Context")
+                _cfg_autocut = _load_config()
+                s_autocut_enabled = gr.Checkbox(
+                    label="Enable AutoCut Context",
+                    value=bool(_cfg_autocut.get("autocut_enabled", 0)),
+                )
+                s_autocut_first = gr.Number(
+                    label="First (tokens)", precision=0,
+                    value=int(_cfg_autocut.get("autocut_first") or 0),
+                )
+                s_autocut_last = gr.Number(
+                    label="Last (tokens)", precision=0,
+                    value=int(_cfg_autocut.get("autocut_last") or 2000),
+                )
+                s_autocut_limit = gr.Number(
+                    label="Mid limit (tokens)", precision=0,
+                    value=int(_cfg_autocut.get("autocut_limit") or 500),
+                )
+                s_autocut_algo = gr.Dropdown(
+                    label="Mid algorithm",
+                    choices=["rs", "bm25", "dp", "tr"],
+                    value=_cfg_autocut.get("autocut_algo", "bm25"),
+                )
+                s_autocut_save_btn = gr.Button("Save AutoCut settings", variant="secondary")
+                s_autocut_status = gr.Markdown("")
+
+                def _save_autocut(enabled, first, last, limit, algo):
+                    _save_config({
+                        "autocut_enabled": 1 if enabled else 0,
+                        "autocut_first": int(first or 0),
+                        "autocut_last": int(last or 0),
+                        "autocut_limit": int(limit or 0),
+                        "autocut_algo": algo or "bm25",
+                    })
+                    return "Saved."
+
+                s_autocut_save_btn.click(
+                    _save_autocut,
+                    inputs=[s_autocut_enabled, s_autocut_first, s_autocut_last,
+                            s_autocut_limit, s_autocut_algo],
+                    outputs=[s_autocut_status],
+                )
+
+                gr.Markdown("---\n### Diagnostics — ctxtimer")
+                gr.Markdown(
+                    "Empirically measure the maximum context size this model/host/timeout "
+                    "combination can handle before failing. Technical/diagnostic tool."
+                )
+                with gr.Row():
+                    ct_mode = gr.Radio(["seq", "bin"], value="seq", label="Search mode")
+                    ct_full = gr.Checkbox(
+                        value=False,
+                        label="Full mode (wait for entire response, not just first token)",
+                    )
+                with gr.Row():
+                    ct_start = gr.Number(value=1000, precision=0, label="Start (tokens)")
+                    ct_end   = gr.Number(value=None, precision=0, label="End (tokens, bin mode only)")
+                    ct_step  = gr.Number(value=1000, precision=0, label="Step (tokens)")
+                with gr.Row():
+                    ct_run_btn    = gr.Button("Run ctxtimer", variant="primary", scale=2)
+                    ct_cancel_btn = gr.Button("Cancel", scale=1)
+                    ct_clear_btn  = gr.Button("Clear report", scale=1)
+                ct_progress  = gr.Textbox(label="Progress", lines=10, interactive=False)
+                ct_table     = gr.Dataframe(headers=["Tokens", "Status", "Error"],
+                                             label="Results (this run)", interactive=False)
+                ct_report_df = gr.Dataframe(
+                    headers=["Timestamp", "Model", "Provider", "Timeout", "Max ctx", "Mode", "Start", "End"],
+                    label="Saved report.csv", interactive=False)
+                ct_status = gr.Markdown("")
+
+                _ct_cancel_flag = {"stop": False}
+
+                def _ctxtimer_report_rows():
+                    from . import ctxtimer as _ct
+                    rows = _ct.list_report()
+                    return [[r.get("timestamp", ""), r.get("model", ""), r.get("provider", ""),
+                             r.get("timeout_s", ""), r.get("max_context_tokens", ""),
+                             r.get("search_mode", ""), r.get("start_tokens", ""), r.get("end_tokens", "")]
+                            for r in rows]
+
+                def _ctxtimer_run(mode, full, start, end, step, model, url, backend_label, tmo):
+                    import queue as _ctq, threading as _ctth
+                    from . import ctxtimer as _ct
+                    from .adapter import ChatAdapter
+
+                    _ct_cancel_flag["stop"] = False
+                    base_prompt = _ct.load_base_prompt()
+                    if not base_prompt:
+                        yield "ERROR: base_prompt.txt not found", [], _ctxtimer_report_rows()
+                        return
+
+                    end_i = int(end) if end else None
+                    max_test = end_i or _ct.chars_to_tokens(len(base_prompt))
+                    num_ctx = _ct.safe_num_ctx(max(max_test, int(start)))
+                    adapter = ChatAdapter(model=model, base_url=url, backend=_backend_key(backend_label),
+                                          num_ctx=num_ctx, timeout=int(tmo))
+
+                    q: _ctq.Queue = _ctq.Queue()
+                    result_holder = {}
+
+                    def _worker():
+                        try:
+                            result_holder["result"] = _ct.run_search(
+                                adapter, mode=mode, start=int(start), end=end_i,
+                                step=int(step), full_mode=full,
+                                progress_cb=lambda ev: q.put(ev),
+                                should_cancel=lambda: _ct_cancel_flag["stop"],
+                            )
+                        finally:
+                            q.put(None)
+
+                    _ctth.Thread(target=_worker, daemon=True).start()
+
+                    lines: list[str] = []
+                    rows: list[list] = []
+                    while True:
+                        ev = q.get()
+                        if ev is None:
+                            break
+                        lines.append(f"{ev['tokens']:>7,} tokens  {ev['status'].upper()}"
+                                      + (f" ({ev['error']})" if ev.get("error") else ""))
+                        rows.append([ev["tokens"], ev["status"], ev.get("error", "")])
+                        yield "\n".join(lines[-40:]), rows, _ctxtimer_report_rows()
+
+                    result = result_holder.get("result", {})
+                    max_ok = result.get("max_success_tokens")
+                    concl = (f"Maximum safe context: {max_ok:,} tokens" if max_ok
+                             else "All tested sizes failed.")
+                    if result.get("cancelled"):
+                        concl += " (cancelled)"
+                    lines.append(concl)
+                    yield "\n".join(lines[-40:]), rows, _ctxtimer_report_rows()
+
+                def _ctxtimer_cancel():
+                    _ct_cancel_flag["stop"] = True
+                    return "Cancelling…"
+
+                def _ctxtimer_clear():
+                    from . import ctxtimer as _ct
+                    _ct.clear_report()
+                    return [], "Report cleared."
+
+                ct_run_btn.click(
+                    _ctxtimer_run,
+                    inputs=[ct_mode, ct_full, ct_start, ct_end, ct_step, g_model, g_url, g_backend, s_timeout],
+                    outputs=[ct_progress, ct_table, ct_report_df],
+                )
+                ct_cancel_btn.click(_ctxtimer_cancel, inputs=[], outputs=[ct_status])
+                ct_clear_btn.click(_ctxtimer_clear, inputs=[], outputs=[ct_report_df, ct_status])
 
             # Prompts
             # ══════════════════════════════════════════════════════════════════
@@ -4166,17 +4398,85 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
         atc_add.click(
             _add_to_chat,
             inputs=[ctx_buffer, ctx_sources, atc_is_new, atc_mode, atc_n, atc_display,
-                    chatbot, s_cid, s_ctx, s_hidden_ctx,
+                    chatbot, s_cid, ctx_lbl, s_hidden_ctx,
                     g_model, g_url, g_backend, s_timeout],
-            outputs=[chatbot, s_cid, s_ctx, ctx_lbl, s_hidden_ctx, hist_dd, add_ctx_panel],
+            outputs=[chatbot, s_cid, ctx_lbl, s_hidden_ctx, hist_dd, add_ctx_panel],
             js=_JS_SWITCH_TO_CHAT,
         )
 
         app.load(
             lambda t: gr.Number(value=int(t)) if t else gr.update(),
             inputs=[g_saved_timeout], outputs=[s_timeout],
+            queue=False,
         )
-        s_timeout.change(lambda t: int(t), inputs=[s_timeout], outputs=[g_saved_timeout])
+        s_timeout.change(lambda t: int(t), inputs=[s_timeout], outputs=[g_saved_timeout],
+                          queue=False)
+
+        # Every config.json-backed Settings widget below is only populated once, at
+        # build_app() process-startup time — re-read them all fresh from disk on every
+        # browser page load, so a save made in another tab/session (or via the
+        # Flask/FastAPI web UI, which shares the same config.json) is picked up without
+        # needing to restart the Gradio process. g_model's choices are deliberately left
+        # alone (recomputing them needs a live list_models() network call — same as the
+        # existing "refresh models" button already provides on demand).
+        def _reload_settings_ui():
+            cfg = _load_config()
+            saved_url = cfg.get("saved_url", ollama_url)
+            raw_backend = cfg.get("saved_backend", _BACKEND_OLLAMA)
+            saved_backend = (_BACKEND_OPENAI if raw_backend in ("openai", _BACKEND_OPENAI)
+                              else _BACKEND_OLLAMA)
+            saved_model = cfg.get("saved_model", None)
+            conn_text = (f"`{saved_model}` @ `{saved_url}` ({saved_backend})"
+                         if saved_model else t["settings_conn_none"])
+            return (
+                saved_url, saved_backend,
+                t["settings_conn_current"].format(val=conn_text),
+                cfg.get("theme", "Monochrome"),
+                cfg.get("lang", lang),
+                cfg.get("active_profile", ""),
+                cfg.get("reserve_mode", "response"), int(cfg.get("reserve_timeout", 600)),
+                cfg.get("auth_user", "admin"),
+                int(cfg.get("restart_delay", 8)), int(cfg.get("worker_timeout", 300)),
+                cfg.get("ollama_kv_cache", ""),
+                bool(cfg.get("ollama_flash_attention", 0)),
+                cfg.get("ollama_keep_alive", ""),
+                (int(cfg["ollama_max_loaded_models"])
+                 if cfg.get("ollama_max_loaded_models") else None),
+                cfg.get("ollama_host", ""),
+                bool(cfg.get("ollama_vulkan", 0)),
+                bool(cfg.get("ollama_igpu_enable", 0)),
+                bool(cfg.get("autocut_enabled", 0)),
+                int(cfg.get("autocut_first") or 0),
+                int(cfg.get("autocut_last") or 2000),
+                int(cfg.get("autocut_limit") or 500),
+                cfg.get("autocut_algo", "bm25"),
+            )
+
+        app.load(
+            _reload_settings_ui,
+            outputs=[
+                g_url, g_backend, s_conn_current,
+                s_theme, s_lang,
+                s_profile,
+                s_reserve_mode, s_reserve_timeout,
+                s_auth_user,
+                s_restart_delay, s_worker_timeout,
+                s_ollama_kv, s_ollama_flash, s_ollama_keep_alive, s_ollama_max_loaded,
+                s_ollama_host, s_ollama_vulkan, s_ollama_igpu,
+                s_autocut_enabled, s_autocut_first, s_autocut_last,
+                s_autocut_limit, s_autocut_algo,
+            ],
+            # app.queue() (below) sets default_concurrency_limit=1 for the WHOLE app —
+            # intentional, so concurrent chat/translate/webcrawl/etc. calls don't hammer
+            # a single local Ollama daemon. But that means this pure disk-read reload was
+            # sharing that same single global slot: if a chat generation (or any other
+            # long-running call) was still in flight when the page loaded, Settings would
+            # sit queued behind it for however long that took — which is exactly the
+            # "loads for a whole minute, then 'refresh models' suddenly shows it was done
+            # all along" symptom. queue=False bypasses the shared queue entirely for this
+            # instant, no-LLM-call handler.
+            queue=False,
+        )
 
         # ── start background scheduler ────────────────────────────────────────
         try:

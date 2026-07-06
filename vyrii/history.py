@@ -101,6 +101,18 @@ def get_messages(chat_id: int) -> list[dict]:
     return [{"role": role, "content": content} for role, content in rows]
 
 
+def delete_last_messages(chat_id: int, count: int) -> None:
+    if count <= 0:
+        return
+    with _conn() as c:
+        c.execute(
+            "DELETE FROM messages WHERE id IN "
+            "(SELECT id FROM messages WHERE chat_id=? ORDER BY id DESC LIMIT ?)",
+            (chat_id, count),
+        )
+    _export_chat_md(chat_id)
+
+
 def delete_chat(chat_id: int) -> None:
     with _conn() as c:
         row = c.execute("SELECT title FROM chats WHERE id=?", (chat_id,)).fetchone()

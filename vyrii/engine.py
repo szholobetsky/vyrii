@@ -113,26 +113,39 @@ def stream_chat(
     backend: str = BACKEND_OLLAMA,
     thinking: bool = False,
     timeout: int = 180,
+    options: dict | None = None,
+    raise_errors: bool = False,
 ):
-    """Yield text chunks from streaming chat API."""
+    """Yield text chunks from streaming chat API.
+
+    options: extra backend-specific generation options merged on top of the
+      defaults (e.g. {"num_predict": 1} for Ollama). Ignored keys for the
+      OpenAI backend are best-effort translated (see _stream_openai).
+    raise_errors: if True, a request failure (timeout, connection error, ...)
+      is re-raised instead of being swallowed and embedded as
+      "**[Error: ...]**" text in the yielded output. Callers that need a
+      reliable success/failure signal (rather than human-facing chat text)
+      should set this to True.
+    """
     clean = _clean_messages(messages)
     if not clean or not model:
         yield "**[Error: no messages or model not set]**"
         return
 
     if backend == BACKEND_OPENAI:
-        yield from _stream_openai(clean, model, base_url, timeout)
+        yield from _stream_openai(clean, model, base_url, timeout, options, raise_errors)
     else:
-        yield from _stream_ollama(clean, model, base_url, num_ctx, thinking, timeout)
+        yield from _stream_ollama(clean, model, base_url, num_ctx, thinking, timeout, options, raise_errors)
 
 
-def _stream_ollama(clean, model, base_url, num_ctx, thinking=False, timeout=180):
+def _stream_ollama(clean, model, base_url, num_ctx, thinking=False, timeout=180,
+                    options=None, raise_errors=False):
     url = f"{base_url}/api/chat"
     payload = {
         "model": model,
         "messages": clean,
         "stream": True,
-        "options": {"num_ctx": num_ctx},
+        "options": {"num_ctx": num_ctx, **(options or {})},
     }
     if thinking:
         payload["think"] = True
@@ -162,16 +175,23 @@ def _stream_ollama(clean, model, base_url, num_ctx, thinking=False, timeout=180)
             if in_think:
                 yield "</think>"
     except Exception as e:
+        if raise_errors:
+            raise
         yield f"\n\n**[Error: {e}]**"
 
 
-def _stream_openai(clean, model, base_url, timeout=180):
+def _stream_openai(clean, model, base_url, timeout=180, options=None, raise_errors=False):
     url = f"{base_url}/v1/chat/completions"
     payload = {
         "model": model,
         "messages": clean,
         "stream": True,
     }
+    if options:
+        o = dict(options)
+        if "num_predict" in o:
+            payload["max_tokens"] = o.pop("num_predict")
+        payload.update(o)
     try:
         with requests.post(url, json=payload, stream=True, timeout=timeout) as resp:
             resp.raise_for_status()
@@ -194,6 +214,8 @@ def _stream_openai(clean, model, base_url, timeout=180):
                 if content:
                     yield content
     except Exception as e:
+        if raise_errors:
+            raise
         yield f"\n\n**[Error: {e}]**"
 
 
@@ -204,6 +226,9 @@ def complete(
     num_ctx: int = CTX_START,
     backend: str = BACKEND_OLLAMA,
     timeout: int = 180,
+    options: dict | None = None,
+    raise_errors: bool = False,
 ) -> str:
     """Non-streaming single response."""
-    return "".join(stream_chat(messages, model, base_url, num_ctx, backend, timeout=timeout))
+    return "".join(stream_chat(messages, model, base_url, num_ctx, backend, timeout=timeout,
+                                options=options, raise_errors=raise_errors))

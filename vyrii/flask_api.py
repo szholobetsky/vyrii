@@ -177,6 +177,17 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         cid = f"chatcmpl-{uuid.uuid4().hex[:8]}"
         created = int(time.time())
 
+        cfg = _read_cfg()
+        if cfg.get("autocut_enabled"):
+            from . import ctxwindow
+            messages = ctxwindow.apply_autocut(
+                messages, enabled=True,
+                first=int(cfg.get("autocut_first") or 0),
+                last=int(cfg.get("autocut_last") or 2000),
+                algo=cfg.get("autocut_algo") or "bm25",
+                limit=int(cfg.get("autocut_limit") or 500),
+            )
+
         m_name, m_url, m_backend = parse_model_spec(raw_model)
         use_url = m_url or base_url
         use_backend = m_backend or backend
@@ -677,7 +688,10 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
                    "theme", "timeout", "worker_timeout", "active_profile",
                    "reserve_mode", "reserve_timeout", "restart_cmd",
                    "ollama_kv_cache", "ollama_flash_attention",
-                   "ollama_keep_alive", "ollama_max_loaded_models", "ollama_host"}
+                   "ollama_keep_alive", "ollama_max_loaded_models", "ollama_host",
+                   "ollama_vulkan", "ollama_igpu_enable",
+                   "autocut_enabled", "autocut_first", "autocut_last",
+                   "autocut_limit", "autocut_algo"}
         updates = {k: v for k, v in body.items() if k in allowed and v is not None}
         try:
             _write_cfg(updates)
@@ -1108,6 +1122,86 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
 
         return Response(stream_with_context(_gen()), mimetype="text/event-stream")
 
+    # ── /vyrii/ctxtimer/* ─────────────────────────────────────────────────────
+
+    _ctxtimer_cancel_flags: dict = {}
+
+    @app.route("/vyrii/ctxtimer/run", methods=["POST"])
+    def ctxtimer_run():
+        import queue as _q
+        from . import ctxtimer as _ct
+        from .adapter import ChatAdapter
+
+        body    = request.get_json(silent=True) or {}
+        model   = body.get("model", "") or _default_model()
+        mode    = body.get("mode", "seq")
+        start   = int(body.get("start", 1000))
+        end     = body.get("end")
+        end     = int(end) if end is not None else None
+        step    = int(body.get("step", 1000))
+        full    = bool(body.get("full", False))
+        req_timeout = int(body.get("timeout") or timeout)
+
+        base_prompt = _ct.load_base_prompt()
+        if not base_prompt:
+            def _e():
+                yield f'data: {json.dumps({"type": "error", "text": "base_prompt.txt not found"})}\n\n'
+            return Response(stream_with_context(_e()), mimetype="text/event-stream")
+
+        max_test = end or _ct.chars_to_tokens(len(base_prompt))
+        num_ctx  = _ct.safe_num_ctx(max(max_test, start))
+        adapter  = ChatAdapter(model=model, base_url=base_url, backend=backend,
+                                num_ctx=num_ctx, timeout=req_timeout)
+
+        q: _q.Queue = _q.Queue()
+        cancel_flag = {"stop": False}
+        run_id = str(uuid.uuid4())
+        _ctxtimer_cancel_flags[run_id] = cancel_flag
+
+        def _run():
+            try:
+                result = _ct.run_search(
+                    adapter, mode=mode, start=start, end=end, step=step, full_mode=full,
+                    progress_cb=lambda ev: q.put({"type": "progress", **ev}),
+                    should_cancel=lambda: cancel_flag["stop"],
+                )
+                q.put({"type": "done", **result})
+            except Exception as e:
+                q.put({"type": "error", "text": str(e)})
+            finally:
+                _ctxtimer_cancel_flags.pop(run_id, None)
+
+        threading.Thread(target=_run, daemon=True).start()
+
+        def _gen():
+            yield f'data: {json.dumps({"type": "started", "run_id": run_id})}\n\n'
+            while True:
+                item = q.get()
+                yield f"data: {json.dumps(item)}\n\n"
+                if item["type"] in ("done", "error"):
+                    break
+
+        return Response(stream_with_context(_gen()), mimetype="text/event-stream")
+
+    @app.route("/vyrii/ctxtimer/cancel", methods=["POST"])
+    def ctxtimer_cancel():
+        body = request.get_json(silent=True) or {}
+        flag = _ctxtimer_cancel_flags.get(body.get("run_id", ""))
+        if flag is not None:
+            flag["stop"] = True
+        return jsonify({"ok": True})
+
+    @app.route("/vyrii/ctxtimer/report", methods=["GET"])
+    def ctxtimer_report():
+        from . import ctxtimer as _ct
+        model_filter = request.args.get("model") or None
+        return jsonify({"rows": _ct.list_report(model_filter)})
+
+    @app.route("/vyrii/ctxtimer/report", methods=["DELETE"])
+    def ctxtimer_report_clear():
+        from . import ctxtimer as _ct
+        return jsonify({"ok": _ct.clear_report()})
+
     # ── /vyrii/system/* ───────────────────────────────────────────────────────
 
     _ROOT = pathlib.Path(__file__).parent.parent
@@ -1160,13 +1254,16 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         if ml: env["OLLAMA_MAX_LOADED_MODELS"] = ml
         oh = cfg.get("ollama_host", "").strip()
         if oh: env["OLLAMA_HOST"] = oh
+        env["OLLAMA_VULKAN"] = "1" if cfg.get("ollama_vulkan") else "0"
+        env["OLLAMA_IGPU_ENABLE"] = "1" if cfg.get("ollama_igpu_enable") else "0"
         return env
 
     def _ollama_persist_windows(env: dict) -> None:
         """Write Ollama env vars to HKCU\\Environment so any auto-restart picks them up."""
         import winreg
         _OLLAMA_VARS = ["OLLAMA_KV_CACHE_TYPE", "OLLAMA_FLASH_ATTENTION",
-                        "OLLAMA_KEEP_ALIVE", "OLLAMA_MAX_LOADED_MODELS", "OLLAMA_HOST"]
+                        "OLLAMA_KEEP_ALIVE", "OLLAMA_MAX_LOADED_MODELS", "OLLAMA_HOST",
+                        "OLLAMA_VULKAN", "OLLAMA_IGPU_ENABLE"]
         key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_SET_VALUE)
         for name in _OLLAMA_VARS:
             val = env.get(name, "")

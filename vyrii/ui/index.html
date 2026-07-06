@@ -891,9 +891,118 @@
                    placeholder="0.0.0.0:11434">
           </div>
 
+          <div class="form-group" style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="cfg-ollama-vulkan">
+            <label class="form-label" style="margin:0">Vulkan backend (OLLAMA_VULKAN=1)</label>
+          </div>
+
+          <div class="form-group" style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="cfg-ollama-igpu">
+            <label class="form-label" style="margin:0">Enable integrated GPU (OLLAMA_IGPU_ENABLE=1)</label>
+          </div>
+
           <div style="margin-top:8px;display:flex;align-items:center;gap:12px">
             <button class="btn btn-ghost btn-sm" onclick="ollamaRestart()">Save &amp; Restart Ollama</button>
             <span id="ollama-status" style="font-size:13px;color:var(--text-muted)"></span>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-title">Diagnostics</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">
+            Measure the maximum context size this model/host/timeout combination can handle before failing.
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Search mode</label>
+              <select id="ct-mode" class="form-control">
+                <option value="seq">Sequential</option>
+                <option value="bin">Binary</option>
+              </select>
+            </div>
+            <div class="form-group" style="display:flex;align-items:center;gap:8px">
+              <input type="checkbox" id="ct-full">
+              <label class="form-label" style="margin:0">Full mode (wait for entire response)</label>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Start (tokens)</label>
+              <input id="ct-start" type="number" class="form-control" value="1000">
+            </div>
+            <div class="form-group">
+              <label class="form-label">End (tokens, bin only)</label>
+              <input id="ct-end" type="number" class="form-control" placeholder="auto">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Step (tokens)</label>
+              <input id="ct-step" type="number" class="form-control" value="1000">
+            </div>
+          </div>
+
+          <div style="margin-top:8px;display:flex;align-items:center;gap:12px">
+            <button class="btn btn-ghost btn-sm" onclick="ctxtimerRun()">Run ctxtimer</button>
+            <button class="btn btn-ghost btn-sm" onclick="ctxtimerCancel()" id="ct-cancel-btn" style="display:none">Cancel</button>
+            <span id="ctxtimer-status" style="font-size:13px;color:var(--text-muted)"></span>
+          </div>
+
+          <div id="ctxtimer-progress-log" style="max-height:160px;overflow:auto;font-family:monospace;font-size:12px;margin-top:8px"></div>
+          <div id="ctxtimer-results" style="margin-top:8px"></div>
+
+          <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+              <span class="form-label" style="margin:0">Saved report</span>
+              <button class="btn btn-ghost btn-sm" onclick="ctxtimerReportShow()">View</button>
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px">
+                <input type="checkbox" id="ct-clear-confirm"> Confirm delete
+              </label>
+              <button class="btn btn-danger btn-sm" onclick="ctxtimerReportClear()">Clear report</button>
+            </div>
+            <div id="ctxtimer-report-table" style="margin-top:8px"></div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-title">AutoCut Context</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">
+            Non-destructive sliding-window projection of the chat history (fixed head + sliding tail
+            + optional mid-selection) applied before each LLM call, once KV-cache stops helping.
+          </div>
+
+          <div class="form-group" style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="cfg-autocut-enabled">
+            <label class="form-label" style="margin:0">Enable AutoCut Context</label>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">First (tokens)</label>
+              <input id="cfg-autocut-first" type="number" class="form-control form-control-sm" value="0" min="0">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Last (tokens)</label>
+              <input id="cfg-autocut-last" type="number" class="form-control form-control-sm" value="2000" min="0">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Mid limit (tokens)</label>
+              <input id="cfg-autocut-limit" type="number" class="form-control form-control-sm" value="500" min="0">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Mid algorithm</label>
+            <select id="cfg-autocut-algo" class="form-control">
+              <option value="rs">Reservoir Sampling</option>
+              <option value="bm25">BM25 (query-relevant)</option>
+              <option value="dp">DP / Knapsack</option>
+              <option value="tr">TextRank</option>
+            </select>
+          </div>
+
+          <div style="margin-top:8px;display:flex;align-items:center;gap:12px">
+            <button class="btn btn-ghost btn-sm" onclick="autocutSave()">Save</button>
+            <span id="autocut-status" style="font-size:13px;color:var(--text-muted)"></span>
           </div>
         </div>
 

@@ -127,6 +127,15 @@ class ObfuscateRequest(BaseModel):
     force: bool = False
     model: str = ""
 
+class CtxtimerRunRequest(BaseModel):
+    model:   str = ""
+    mode:    str = "seq"
+    start:   int = 1000
+    end:     int | None = None
+    step:    int = 1000
+    full:    bool = False
+    timeout: int | None = None
+
 class DeobfuscateRequest(BaseModel):
     text: str
     glossary: str
@@ -162,6 +171,13 @@ class SettingsRequest(BaseModel):
     ollama_keep_alive:        str | None = None
     ollama_max_loaded_models: str | None = None
     ollama_host:              str | None = None
+    ollama_vulkan:            int | None = None
+    ollama_igpu_enable:       int | None = None
+    autocut_enabled:          int | None = None
+    autocut_first:            int | None = None
+    autocut_last:             int | None = None
+    autocut_limit:            int | None = None
+    autocut_algo:             str | None = None
 
 class LockRequest(BaseModel):
     host:   str
@@ -324,6 +340,17 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         messages = [m.model_dump() for m in req.messages]
         cid = f"chatcmpl-{uuid.uuid4().hex[:8]}"
         created = int(time.time())
+
+        cfg = _read_cfg()
+        if cfg.get("autocut_enabled"):
+            from . import ctxwindow
+            messages = ctxwindow.apply_autocut(
+                messages, enabled=True,
+                first=int(cfg.get("autocut_first") or 0),
+                last=int(cfg.get("autocut_last") or 2000),
+                algo=cfg.get("autocut_algo") or "bm25",
+                limit=int(cfg.get("autocut_limit") or 500),
+            )
 
         m_name, m_url, m_backend = parse_model_spec(raw_model)
         use_url = m_url or base_url
@@ -1190,6 +1217,77 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
 
         return StreamingResponse(_gen(), media_type="text/event-stream")
 
+    # ── /vyrii/ctxtimer/* ─────────────────────────────────────────────────────
+
+    _ctxtimer_cancel_flags: dict = {}
+
+    @app.post("/vyrii/ctxtimer/run")
+    def ctxtimer_run(req: CtxtimerRunRequest):
+        import queue as _q, threading as _t
+        from . import ctxtimer as _ct
+        from .adapter import ChatAdapter
+
+        model = req.model or _default_model()
+        base_prompt = _ct.load_base_prompt()
+        if not base_prompt:
+            def _e():
+                yield f'data: {json.dumps({"type": "error", "text": "base_prompt.txt not found"})}\n\n'
+            return StreamingResponse(_e(), media_type="text/event-stream")
+
+        max_test = req.end or _ct.chars_to_tokens(len(base_prompt))
+        num_ctx  = _ct.safe_num_ctx(max(max_test, req.start))
+        req_timeout = req.timeout or timeout
+        adapter  = ChatAdapter(model=model, base_url=base_url, backend=backend,
+                                num_ctx=num_ctx, timeout=req_timeout)
+
+        q = _q.Queue()
+        cancel_flag = {"stop": False}
+        run_id = str(uuid.uuid4())
+        _ctxtimer_cancel_flags[run_id] = cancel_flag
+
+        def _run():
+            try:
+                result = _ct.run_search(
+                    adapter, mode=req.mode, start=req.start, end=req.end,
+                    step=req.step, full_mode=req.full,
+                    progress_cb=lambda ev: q.put({"type": "progress", **ev}),
+                    should_cancel=lambda: cancel_flag["stop"],
+                )
+                q.put({"type": "done", **result})
+            except Exception as e:
+                q.put({"type": "error", "text": str(e)})
+            finally:
+                _ctxtimer_cancel_flags.pop(run_id, None)
+
+        _t.Thread(target=_run, daemon=True).start()
+
+        def _gen():
+            yield f'data: {json.dumps({"type": "started", "run_id": run_id})}\n\n'
+            while True:
+                item = q.get()
+                yield f"data: {json.dumps(item)}\n\n"
+                if item["type"] in ("done", "error"):
+                    break
+
+        return StreamingResponse(_gen(), media_type="text/event-stream")
+
+    @app.post("/vyrii/ctxtimer/cancel")
+    def ctxtimer_cancel(body: dict):
+        flag = _ctxtimer_cancel_flags.get(body.get("run_id", ""))
+        if flag is not None:
+            flag["stop"] = True
+        return {"ok": True}
+
+    @app.get("/vyrii/ctxtimer/report")
+    def ctxtimer_report(model: str | None = None):
+        from . import ctxtimer as _ct
+        return {"rows": _ct.list_report(model)}
+
+    @app.delete("/vyrii/ctxtimer/report")
+    def ctxtimer_report_clear():
+        from . import ctxtimer as _ct
+        return {"ok": _ct.clear_report()}
+
     # ── /vyrii/system/* ───────────────────────────────────────────────────────
 
     import platform as _platform, threading as _threading, os as _os4
@@ -1230,12 +1328,15 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         if ml: env["OLLAMA_MAX_LOADED_MODELS"] = ml
         oh = cfg.get("ollama_host", "").strip()
         if oh: env["OLLAMA_HOST"] = oh
+        env["OLLAMA_VULKAN"] = "1" if cfg.get("ollama_vulkan") else "0"
+        env["OLLAMA_IGPU_ENABLE"] = "1" if cfg.get("ollama_igpu_enable") else "0"
         return env
 
     def _ollama_persist_windows(env: dict) -> None:
         import winreg as _wr
         _VARS = ["OLLAMA_KV_CACHE_TYPE", "OLLAMA_FLASH_ATTENTION",
-                 "OLLAMA_KEEP_ALIVE", "OLLAMA_MAX_LOADED_MODELS", "OLLAMA_HOST"]
+                 "OLLAMA_KEEP_ALIVE", "OLLAMA_MAX_LOADED_MODELS", "OLLAMA_HOST",
+                 "OLLAMA_VULKAN", "OLLAMA_IGPU_ENABLE"]
         key = _wr.OpenKey(_wr.HKEY_CURRENT_USER, "Environment", 0, _wr.KEY_SET_VALUE)
         for name in _VARS:
             val = env.get(name, "")
