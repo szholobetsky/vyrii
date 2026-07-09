@@ -557,44 +557,17 @@ _HEAD_HTML = """
 
 
 def _stream_flow(run_fn, lines: list):
-    """Run run_fn in a background thread, capture its stdout, yield progress.
-    Captured lines are also written into the `lines` list for the caller to inspect."""
-    import threading as _th
-    import queue as _q
-    import sys, io
+    """Run run_fn in a background thread, capture its stdout, yield progress
+    as an accumulated markdown code-block (last 60 lines).
+    Captured lines are also written into the `lines` list for the caller to inspect.
 
-    q = _q.Queue()
-
-    class _W(io.TextIOBase):
-        def write(self, s):
-            if s:
-                q.put(s)
-            return len(s) if s else 0
-        def flush(self):
-            pass
-
-    def _worker():
-        old_out, old_err = sys.stdout, sys.stderr
-        sys.stdout = _W()
-        sys.stderr = _W()
-        try:
-            run_fn()
-        except Exception as e:
-            import traceback as _tb
-            q.put(f"\n[ERROR] {e}\n{_tb.format_exc()}\n")
-        finally:
-            sys.stdout, sys.stderr = old_out, old_err
-            q.put(None)
-
-    _th.Thread(target=_worker, daemon=True).start()
-    while True:
-        item = q.get()
-        if item is None:
-            break
-        text = item.rstrip('\n')
-        if text.strip():
-            lines.append(text)
-            yield '```\n' + '\n'.join(lines[-60:]) + '\n```'
+    Thin Gradio-flavored wrapper around adapter.stream_flow_lines — the actual
+    thread/queue/stdout-capture mechanism is shared with the Flask/FastAPI SSE
+    routes (see vyrii/adapter.py) rather than duplicated per backend."""
+    from .adapter import stream_flow_lines
+    for text in stream_flow_lines(run_fn):
+        lines.append(text)
+        yield '```\n' + '\n'.join(lines[-60:]) + '\n```'
 
 
 _JS_SCROLL_TO_PANEL = (
@@ -624,6 +597,25 @@ _JS_SCROLL_TO_INDEX = (
     " const el = document.getElementById('fi_index_section');"
     " if (el) el.scrollIntoView({behavior: 'smooth', block: 'start'});"
     " }, 150); }"
+)
+_JS_SWITCH_TO_GLOSSARY = (
+    "() => { setTimeout(() => {"
+    " const btns = document.querySelectorAll('[role=\"tab\"]');"
+    " for (const b of btns) {"
+    "  if (b.textContent.trim() === 'Glossary') { b.click(); break; }"
+    " }"
+    " }, 200); }"
+)
+# Bridges a real <a onclick> click inside gl_term_view (a gr.HTML block) back
+# into a Python callback: gr.HTML has no native link-click event in this
+# Gradio version, so the anchor's onclick writes the clicked term into this
+# hidden textbox's underlying <textarea> and dispatches an 'input' event,
+# which Gradio's own JS picks up and forwards as a normal .change() trigger.
+_GL_LINK_ONCLICK = (
+    "document.querySelector('#gl_term_bridge textarea').value = '{term}';"
+    "document.querySelector('#gl_term_bridge textarea')"
+    ".dispatchEvent(new Event('input', {{bubbles: true}}));"
+    "return false;"
 )
 _JS_SCROLL_TO_VIEW = (
     "() => { setTimeout(() => {"
@@ -1539,8 +1531,8 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                 gr.Markdown(t["obfuscate_desc"])
                 with gr.Row():
                     with gr.Column(scale=1):
-                        gr.Markdown(t["obf_glossary_header"])
-                        obf_glossary = gr.Textbox(
+                        gr.Markdown(t["obf_dict_header"])
+                        obf_dict = gr.Textbox(
                             value="# real term: code word\nCompany Name: ACME Corp\nJohn Smith: User1\n",
                             label="",
                             lines=14,
@@ -1568,7 +1560,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                             obf_add_btn  = gr.Button(t["add_to_chat_btn"], scale=1)
                             obf_copy_btn = gr.Button(t["copy_btn"],        scale=1)
 
-                def _parse_yaml_glossary(text: str) -> dict:
+                def _parse_yaml_dict(text: str) -> dict:
                     result = {}
                     for line in text.splitlines():
                         line = line.strip()
@@ -1582,7 +1574,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                                 result[k] = v
                     return result
 
-                def _load_obf_glossary(file):
+                def _load_obf_dict(file):
                     if file is None:
                         return gr.update()
                     try:
@@ -1592,15 +1584,15 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     except Exception as e:
                         return t["error_loading"].format(e=e)
 
-                def _obfuscate(text, glossary_yaml, use_llm, model, url, backend_label):
+                def _obfuscate(text, dict_yaml, use_llm, model, url, backend_label):
                     if not text.strip():
                         return ""
-                    glossary = _parse_yaml_glossary(glossary_yaml)
-                    if not glossary:
-                        return t["no_glossary"]
+                    term_map = _parse_yaml_dict(dict_yaml)
+                    if not term_map:
+                        return t["no_dict"]
                     from .flows.obfuscate import _force_replace, _obfuscate_prompt
                     if not use_llm:
-                        return _force_replace(text, glossary)
+                        return _force_replace(text, term_map)
                     _m, _u, _b = parse_model_spec(model)
                     _host = (_u or url or "localhost:11434").replace("http://", "").replace("https://", "")
                     for _ in _stats.wait_for_host(_host):
@@ -1608,24 +1600,24 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     from .adapter import ChatAdapter
                     adapter = ChatAdapter(model=_m, base_url=_u or url,
                                           backend=_b or _backend_key(backend_label))
-                    prompt = _obfuscate_prompt(text, glossary)
+                    prompt = _obfuscate_prompt(text, term_map)
                     try:
                         return adapter._stream_chat([
-                            {"role": "system", "content": "You are a precise text rewriter. Follow glossary instructions exactly."},
+                            {"role": "system", "content": "You are a precise text rewriter. Follow dictionary instructions exactly."},
                             {"role": "user",   "content": prompt},
                         ]) or ""
                     finally:
                         _stats.release_host_sem(_host)
 
-                def _deobfuscate(text, glossary_yaml, use_llm, model, url, backend_label):
+                def _deobfuscate(text, dict_yaml, use_llm, model, url, backend_label):
                     if not text.strip():
                         return ""
-                    glossary = _parse_yaml_glossary(glossary_yaml)
-                    if not glossary:
-                        return t["no_glossary"]
+                    term_map = _parse_yaml_dict(dict_yaml)
+                    if not term_map:
+                        return t["no_dict"]
                     from .flows.deobfuscate import _force_replace, _deobfuscate_prompt
                     if not use_llm:
-                        rev = {v: k for k, v in glossary.items()}
+                        rev = {v: k for k, v in term_map.items()}
                         return _force_replace(text, rev)
                     _m, _u, _b = parse_model_spec(model)
                     _host = (_u or url or "localhost:11434").replace("http://", "").replace("https://", "")
@@ -1634,16 +1626,16 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     from .adapter import ChatAdapter
                     adapter = ChatAdapter(model=_m, base_url=_u or url,
                                           backend=_b or _backend_key(backend_label))
-                    prompt = _deobfuscate_prompt(text, glossary)
+                    prompt = _deobfuscate_prompt(text, term_map)
                     try:
                         return adapter._stream_chat([
-                            {"role": "system", "content": "You are a precise text rewriter. Follow glossary instructions exactly."},
+                            {"role": "system", "content": "You are a precise text rewriter. Follow dictionary instructions exactly."},
                             {"role": "user",   "content": prompt},
                         ]) or ""
                     finally:
                         _stats.release_host_sem(_host)
 
-                def _save_obf_glossary(text):
+                def _save_obf_dict(text):
                     import tempfile
                     tmp = tempfile.NamedTemporaryFile(
                         mode="w", suffix=".yaml", delete=False, encoding="utf-8"
@@ -1652,16 +1644,16 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     tmp.close()
                     return tmp.name
 
-                obf_load.upload(_load_obf_glossary, inputs=[obf_load], outputs=[obf_glossary])
-                obf_save.click(_save_obf_glossary, inputs=[obf_glossary], outputs=[obf_save])
+                obf_load.upload(_load_obf_dict, inputs=[obf_load], outputs=[obf_dict])
+                obf_save.click(_save_obf_dict, inputs=[obf_dict], outputs=[obf_save])
                 obf_btn.click(
                     _obfuscate,
-                    inputs=[obf_src, obf_glossary, obf_llm, g_model, g_url, g_backend],
+                    inputs=[obf_src, obf_dict, obf_llm, g_model, g_url, g_backend],
                     outputs=[obf_dst],
                 )
                 deobf_btn.click(
                     _deobfuscate,
-                    inputs=[obf_dst, obf_glossary, obf_llm, g_model, g_url, g_backend],
+                    inputs=[obf_dst, obf_dict, obf_llm, g_model, g_url, g_backend],
                     outputs=[obf_src],
                 )
                 obf_add_btn.click(lambda c: (c, gr.update(visible=True)), inputs=[obf_dst], outputs=[ctx_buffer, add_ctx_panel], js=_JS_SCROLL_TO_PANEL)
@@ -3160,6 +3152,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     fi_to_scan   = gr.Button(t["files_to_scan_btn"],  size="sm", scale=1)
                     fi_to_index  = gr.Button(t["files_to_index_btn"], size="sm", scale=1)
                     fi_to_view   = gr.Button(t["files_to_view_btn"],  size="sm", scale=1)
+                    fi_to_glossary = gr.Button("Glossary", size="sm", scale=1)
 
                 with gr.Row():
                     fi_mkdir_path = gr.Textbox(label=t["files_mkdir_label"],
@@ -3385,6 +3378,200 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     outputs=[fi_view_path, fi_view_code, fi_view_render,
                              fi_view_html, fi_download, fi_view_status],
                     js=_JS_SCROLL_TO_VIEW,
+                )
+
+            # ══════════════════════════════════════════════════════════════════
+            # Glossary — /flow glossary ported into vyrii/flows/glossary.py
+            # ══════════════════════════════════════════════════════════════════
+            with gr.Tab("Glossary"):
+                gr.Markdown("### Index a folder")
+                with gr.Row():
+                    gl_index_path    = gr.Textbox(label="Folder (relative to ~/.vyrii)", scale=3)
+                    gl_index_project = gr.Textbox(label="Project", value="default", scale=1)
+                with gr.Row():
+                    gl_chunk   = gr.Number(label="Chunk (tokens)", value=1000, precision=0)
+                    gl_overlap = gr.Number(label="Overlap (tokens)", value=50, precision=0)
+                with gr.Row():
+                    gl_redefine  = gr.Checkbox(label="--redefine")
+                    gl_refact    = gr.Checkbox(label="--refact")
+                    gl_crosslink = gr.Checkbox(label="--crosslink")
+                    gl_unique    = gr.Checkbox(label="--unique")
+                    gl_tabular   = gr.Checkbox(label="--tabular")
+                with gr.Row():
+                    gl_index_btn  = gr.Button("Run index", variant="primary", scale=2)
+                    gl_cancel_btn = gr.Button("Stop", scale=1)
+                gl_index_log = gr.Markdown("")
+
+                _gl_cancel_flag = {"stop": False}
+
+                gr.Markdown("---\n### Browse")
+                gl_refresh_btn = gr.Button("Refresh glossary list", size="sm")
+                gl_project_dd  = gr.Dropdown(label="Glossary (folder / project)", choices=[])
+                with gr.Row():
+                    gl_search     = gr.Textbox(label="Search terms", scale=3)
+                    gl_search_btn = gr.Button("Search", scale=1)
+                gl_term_dd   = gr.Dropdown(label="Terms", choices=[])
+                gl_term_view = gr.HTML(value="")
+                gl_term_bridge = gr.Textbox(value="", visible=False, elem_id="gl_term_bridge")
+
+                gl_cur_folder  = gr.State("")
+                gl_cur_project = gr.State("default")
+
+                def _gl_index(path, project, chunk, overlap, redefine, refact,
+                             crosslink, unique, tabular,
+                             model, ollama_u, backend_label, timeout_v):
+                    from .flows import glossary as _gl
+                    from .adapter import ChatAdapter
+                    path = (path or "").strip()
+                    if not path:
+                        yield "Provide a folder path."
+                        return
+                    try:
+                        target = _resolve_safe(path)
+                    except Exception as e:
+                        yield f"Error: {e}"
+                        return
+                    if not target.is_dir():
+                        yield f"Not a directory: {path}"
+                        return
+                    _m, _u, _b = parse_model_spec(model)
+                    adapter = ChatAdapter(model=_m, base_url=_u or ollama_u,
+                                          backend=_b or _backend_key(backend_label),
+                                          timeout=int(timeout_v))
+                    args = (f'index "{target}" --project {(project or "default").strip()} '
+                           f'--chunk {int(chunk)} --overlap {int(overlap)}')
+                    for flag, val in (("redefine", redefine), ("refact", refact),
+                                      ("crosslink", crosslink), ("unique", unique),
+                                      ("tabular", tabular)):
+                        if val:
+                            args += f' --{flag}'
+
+                    _gl_cancel_flag["stop"] = False
+                    adapter._glossary_should_cancel = lambda: _gl_cancel_flag["stop"]
+
+                    def _run():
+                        _gl.set_base_dir(str(target))
+                        _gl.run(adapter, args)
+
+                    lines = []
+                    for progress in _stream_flow(_run, lines):
+                        yield progress
+
+                def _gl_cancel_index():
+                    _gl_cancel_flag["stop"] = True
+
+                gl_index_btn.click(
+                    _gl_index,
+                    inputs=[gl_index_path, gl_index_project, gl_chunk, gl_overlap,
+                            gl_redefine, gl_refact, gl_crosslink, gl_unique, gl_tabular,
+                            g_model, g_url, g_backend, s_timeout],
+                    outputs=[gl_index_log],
+                )
+                gl_cancel_btn.click(_gl_cancel_index, inputs=[], outputs=[], queue=False)
+
+                def _gl_refresh_projects():
+                    from .flows import glossary as _gl
+                    projects = _gl.list_glossaries(str(VYRII_HOME))
+                    choices = []
+                    for p in projects:
+                        try:
+                            rel = str(_pathlib.Path(p["folder"]).relative_to(VYRII_HOME))
+                        except ValueError:
+                            rel = p["folder"]
+                        label = f'{rel} / {p["project"]}  ({p["term_count"]} terms)'
+                        choices.append((label, f'{rel}|{p["project"]}'))
+                    return gr.update(choices=choices, value=None)
+
+                gl_refresh_btn.click(_gl_refresh_projects, outputs=[gl_project_dd])
+
+                def _gl_pick_project(value):
+                    if not value:
+                        return "", "default", gr.update(choices=[]), ""
+                    folder, _, project = value.partition("|")
+                    from .flows import glossary as _gl
+                    try:
+                        base = _resolve_safe(folder)
+                    except Exception:
+                        return folder, project, gr.update(choices=[]), ""
+                    _gl.set_base_dir(str(base))
+                    terms = _gl._load_terms(project)
+                    return folder, project, gr.update(choices=terms, value=None), ""
+
+                gl_project_dd.change(
+                    _gl_pick_project, inputs=[gl_project_dd],
+                    outputs=[gl_cur_folder, gl_cur_project, gl_term_dd, gl_term_view],
+                )
+
+                def _gl_search_terms(query, folder, project):
+                    from .flows import glossary as _gl
+                    if not folder:
+                        return gr.update(choices=[])
+                    try:
+                        base = _resolve_safe(folder)
+                    except Exception:
+                        return gr.update(choices=[])
+                    _gl.set_base_dir(str(base))
+                    terms = _gl._load_terms(project)
+                    q = (query or "").strip().lower()
+                    if q:
+                        terms = [t for t in terms if q in t]
+                    return gr.update(choices=terms)
+
+                gl_search_btn.click(_gl_search_terms, inputs=[gl_search, gl_cur_folder, gl_cur_project],
+                                    outputs=[gl_term_dd])
+                gl_search.submit(_gl_search_terms, inputs=[gl_search, gl_cur_folder, gl_cur_project],
+                                 outputs=[gl_term_dd])
+
+                def _gl_render_term(term, folder, project):
+                    from .flows import glossary as _gl
+                    import html as _html
+                    if not term or not folder:
+                        return ""
+                    try:
+                        base = _resolve_safe(folder)
+                    except Exception:
+                        return ""
+                    _gl.set_base_dir(str(base))
+                    if not _pathlib.Path(_gl._term_path(project, term)).is_file():
+                        return f"<p><em>No such term: {_html.escape(_gl._kebab(term))}</em></p>"
+                    data = _gl._read_term_file(project, term)
+                    parts = [f"<h3>{_html.escape(data['term'])}</h3>"]
+                    parts.append("<h4>DEFINITION</h4><ul>")
+                    for d in data["definitions"]:
+                        parts.append(f"<li>{_html.escape(d)}</li>")
+                    parts.append("</ul><h4>FACTS</h4><ul>")
+                    for fact in data["facts"]:
+                        parts.append(f"<li>{_html.escape(fact)}</li>")
+                    parts.append("</ul><h4>LINK</h4><p>")
+                    if data["links"]:
+                        link_htmls = []
+                        for l in data["links"]:
+                            el = _html.escape(l)
+                            onclick = _GL_LINK_ONCLICK.format(term=el)
+                            link_htmls.append(f'<a href="#" onclick="{onclick}">{el}</a>')
+                        parts.append(", ".join(link_htmls))
+                    else:
+                        parts.append("(none)")
+                    parts.append("</p>")
+                    return "".join(parts)
+
+                gl_term_dd.change(_gl_render_term, inputs=[gl_term_dd, gl_cur_folder, gl_cur_project],
+                                  outputs=[gl_term_view])
+
+                # Link-bridge: an in-page <a onclick> click writes the target
+                # term into gl_term_bridge (hidden textbox), whose .change()
+                # re-renders the view for that term AND updates gl_term_dd so
+                # the visible dropdown stays in sync with in-page navigation.
+                gl_term_bridge.change(
+                    lambda term, folder, project: (term, _gl_render_term(term, folder, project)),
+                    inputs=[gl_term_bridge, gl_cur_folder, gl_cur_project],
+                    outputs=[gl_term_dd, gl_term_view],
+                )
+
+                fi_to_glossary.click(
+                    lambda p: p or "",
+                    inputs=[fi_sel_state], outputs=[gl_index_path],
+                    js=_JS_SWITCH_TO_GLOSSARY,
                 )
 
             # ══════════════════════════════════════════════════════════════════

@@ -565,7 +565,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
 
     # ── /vyrii/obfuscate / deobfuscate ────────────────────────────────────────
 
-    def _glossary_tmp(content: str) -> str:
+    def _dict_tmp(content: str) -> str:
         tmp = tempfile.NamedTemporaryFile(
             mode="w", suffix=".yaml", delete=False, encoding="utf-8"
         )
@@ -577,23 +577,23 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
     def obfuscate():
         from .adapter import ChatAdapter
         from .flows import obfuscate as _of
-        body = request.get_json(silent=True) or {}
-        text     = body.get("text", "")
-        glossary = body.get("glossary", "").strip()
-        force    = body.get("force", False)
-        model    = body.get("model", "") or _default_model()
-        if not glossary:
-            return jsonify({"error": "glossary is required"})
+        body       = request.get_json(silent=True) or {}
+        text       = body.get("text", "")
+        dictionary = body.get("dictionary", "").strip()
+        force      = body.get("force", False)
+        model      = body.get("model", "") or _default_model()
+        if not dictionary:
+            return jsonify({"error": "dictionary is required"})
         adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
         adapter._last_output = text
-        gpath = _glossary_tmp(glossary)
-        args  = f'--glossary {gpath}'
+        dpath = _dict_tmp(dictionary)
+        args  = f'--dict {dpath}'
         if force:
             args += ' --force'
         try:
             _of.run(adapter, args)
         finally:
-            try: os.unlink(gpath)
+            try: os.unlink(dpath)
             except Exception: pass
         return jsonify({"result": adapter.last_reply or ""})
 
@@ -601,23 +601,23 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
     def deobfuscate():
         from .adapter import ChatAdapter
         from .flows import deobfuscate as _dof
-        body = request.get_json(silent=True) or {}
-        text     = body.get("text", "")
-        glossary = body.get("glossary", "").strip()
-        force    = body.get("force", False)
-        model    = body.get("model", "") or _default_model()
-        if not glossary:
-            return jsonify({"error": "glossary is required"})
+        body       = request.get_json(silent=True) or {}
+        text       = body.get("text", "")
+        dictionary = body.get("dictionary", "").strip()
+        force      = body.get("force", False)
+        model      = body.get("model", "") or _default_model()
+        if not dictionary:
+            return jsonify({"error": "dictionary is required"})
         adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
         adapter._last_output = text
-        gpath = _glossary_tmp(glossary)
-        args  = f'--glossary {gpath}'
+        dpath = _dict_tmp(dictionary)
+        args  = f'--dict {dpath}'
         if force:
             args += ' --force'
         try:
             _dof.run(adapter, args)
         finally:
-            try: os.unlink(gpath)
+            try: os.unlink(dpath)
             except Exception: pass
         return jsonify({"result": adapter.last_reply or ""})
 
@@ -1038,6 +1038,115 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
             return jsonify({"error": str(e)}), 400
         except Exception as e:
             return jsonify({"error": str(e)})
+
+    # ── /vyrii/glossary/* ─────────────────────────────────────────────────────
+    # /flow glossary ported into vyrii/flows/glossary.py (self-contained copy,
+    # same convention as ctxwindow.py) — see concepts/GLOSSARY.md in simrgl for
+    # the full design rationale.
+
+    def _glossary_index_args(body: dict) -> str:
+        project = body.get("project", "default").strip() or "default"
+        args = f'--project {project}'
+        args += f' --chunk {int(body.get("chunk", 1000))}'
+        args += f' --overlap {int(body.get("overlap", 50))}'
+        for flag in ("redefine", "refact", "crosslink", "unique", "tabular"):
+            if body.get(flag):
+                args += f' --{flag}'
+        return args
+
+    # run_id -> {"stop": bool} — same pattern as _ctxtimer_cancel_flags: a
+    # background indexing job can't receive Ctrl+C (that's 1bcoder-CLI-only,
+    # SIGINT isn't delivered to worker threads), so the Stop button flips
+    # this flag instead; glossary.py's _llm() checks it before/after every
+    # LLM call via chat._glossary_should_cancel.
+    _glossary_cancel_flags: dict = {}
+
+    @app.route("/vyrii/glossary/index", methods=["POST"])
+    def glossary_index():
+        from .adapter import ChatAdapter, stream_flow_lines
+        from .flows import glossary as _gl
+        body = request.get_json(silent=True) or {}
+        model = body.get("model", "") or _default_model()
+        try:
+            target = _fsafe(body.get("path", ""))
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        if not target.is_dir():
+            return jsonify({"error": f"Not a directory: {body.get('path', '')}"}), 400
+
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
+        args = f'index "{target}" ' + _glossary_index_args(body)
+
+        cancel_flag = {"stop": False}
+        run_id = str(uuid.uuid4())
+        _glossary_cancel_flags[run_id] = cancel_flag
+        adapter._glossary_should_cancel = lambda: cancel_flag["stop"]
+
+        def _gen():
+            def _run():
+                _gl.set_base_dir(str(target))
+                _gl.run(adapter, args)
+            try:
+                yield f'data: {json.dumps({"type": "started", "run_id": run_id})}\n\n'
+                for line in stream_flow_lines(_run):
+                    yield f'data: {json.dumps({"type": "line", "line": line})}\n\n'
+            finally:
+                _glossary_cancel_flags.pop(run_id, None)
+                yield 'data: [DONE]\n\n'
+
+        return Response(stream_with_context(_gen()), mimetype="text/event-stream")
+
+    @app.route("/vyrii/glossary/index/cancel", methods=["POST"])
+    def glossary_index_cancel():
+        body = request.get_json(silent=True) or {}
+        flag = _glossary_cancel_flags.get(body.get("run_id", ""))
+        if flag is not None:
+            flag["stop"] = True
+        return jsonify({"ok": True})
+
+    @app.route("/vyrii/glossary/projects", methods=["GET"])
+    def glossary_projects():
+        from .flows import glossary as _gl
+        results = _gl.list_glossaries(str(_FHOME))
+        for r in results:
+            try:
+                r["folder"] = str(pathlib.Path(r["folder"]).relative_to(_FHOME))
+            except ValueError:
+                pass
+        return jsonify({"projects": results})
+
+    @app.route("/vyrii/glossary/terms", methods=["GET"])
+    def glossary_terms():
+        from .flows import glossary as _gl
+        folder  = request.args.get("folder", "").strip()
+        project = request.args.get("project", "default").strip() or "default"
+        query   = request.args.get("q", "").strip().lower()
+        try:
+            base = _fsafe(folder)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        _gl.set_base_dir(str(base))
+        terms = _gl._load_terms(project)
+        if query:
+            terms = [t for t in terms if query in t]
+        return jsonify({"terms": terms})
+
+    @app.route("/vyrii/glossary/term", methods=["GET"])
+    def glossary_term():
+        from .flows import glossary as _gl
+        folder  = request.args.get("folder", "").strip()
+        project = request.args.get("project", "default").strip() or "default"
+        term    = request.args.get("term", "").strip()
+        if not term:
+            return jsonify({"error": "term is required"}), 400
+        try:
+            base = _fsafe(folder)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        _gl.set_base_dir(str(base))
+        if not os.path.isfile(_gl._term_path(project, term)):
+            return jsonify({"error": f"no such term: {_gl._kebab(term)}"}), 404
+        return jsonify(_gl._read_term_file(project, term))
 
     # ── /vyrii/team/* ─────────────────────────────────────────────────────────
 

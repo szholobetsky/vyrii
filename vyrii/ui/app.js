@@ -370,6 +370,7 @@ function switchTab(tab) {
   if (tab === 'simargl')   loadProjectSelects();
   if (tab === 'svitovyd')  loadProjectSelects();
   if (tab === 'prompts')   prmRefresh();
+  if (tab === 'glossary')  glossaryRefreshProjects();
 }
 
 // ── MARKDOWN RENDERER ─────────────────────────────────
@@ -1359,16 +1360,16 @@ async function runWebIndex() {
 
 // ── OBFUSCATE ─────────────────────────────────────────
 async function runObfuscate() {
-  const text     = document.getElementById('of-input').value.trim();
-  const glossary = document.getElementById('of-glossary').value.trim();
-  if (!text || !glossary) { showToast('Text and glossary name required'); return; }
+  const text       = document.getElementById('of-input').value.trim();
+  const dictionary = document.getElementById('of-dict').value.trim();
+  if (!text || !dictionary) { showToast('Text and dictionary required'); return; }
   setResultLoading('of-result');
   try {
     const res = await fetch('/vyrii/obfuscate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        text, glossary,
+        text, dictionary,
         force: document.getElementById('of-force').checked,
         model: getModel(),
       }),
@@ -1381,16 +1382,16 @@ async function runObfuscate() {
 }
 
 async function runDeobfuscate() {
-  const text     = document.getElementById('dof-input').value.trim();
-  const glossary = document.getElementById('dof-glossary').value.trim();
-  if (!text || !glossary) { showToast('Text and glossary name required'); return; }
+  const text       = document.getElementById('dof-input').value.trim();
+  const dictionary = document.getElementById('dof-dict').value.trim();
+  if (!text || !dictionary) { showToast('Text and dictionary required'); return; }
   setResultLoading('dof-result');
   try {
     const res = await fetch('/vyrii/deobfuscate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        text, glossary,
+        text, dictionary,
         force: document.getElementById('dof-force').checked,
         model: getModel(),
       }),
@@ -1475,7 +1476,8 @@ function showFileInfo(info) {
     ? `<button class="btn btn-ghost btn-sm" onclick="viewFile('${escapedPath}')" data-i18n="view">View</button>
        <button class="btn btn-ghost btn-sm" onclick="fileScan('${escapedPath}')" data-i18n="scan_btn">Scan</button>`
     : `<button class="btn btn-ghost btn-sm" onclick="fileIndex('${escapedPath}')" data-i18n="index_btn">Index</button>
-       <button class="btn btn-ghost btn-sm" onclick="fileScan('${escapedPath}')" data-i18n="scan_btn">Scan</button>`;
+       <button class="btn btn-ghost btn-sm" onclick="fileScan('${escapedPath}')" data-i18n="scan_btn">Scan</button>
+       <button class="btn btn-ghost btn-sm" onclick="glossaryGoTo('${escapedPath}')">Glossary</button>`;
 
   preview.innerHTML = `
     <div class="file-info-box">
@@ -1636,6 +1638,172 @@ async function fileScan(path) {
     result.textContent = data.result ?? data.error ?? t('api_error');
   } catch (e) {
     result.textContent = t('error_prefix') + e.message;
+  }
+}
+
+// ── GLOSSARY ─────────────────────────────────────────
+// /flow glossary ported into vyrii/flows/glossary.py — see concepts/GLOSSARY.md.
+
+function glossaryGoTo(path) {
+  document.getElementById('gl-index-path').value = path;
+  switchTab('glossary');
+  glossaryRefreshProjects();
+}
+
+let _glossaryRunId = null;
+
+async function glossaryRunIndex() {
+  const log = document.getElementById('gl-index-log');
+  log.textContent = '';
+  _glossaryRunId = null;
+  const path = document.getElementById('gl-index-path').value.trim();
+  if (!path) { log.textContent = 'Provide a folder path.'; return; }
+  const body = {
+    path,
+    project:   document.getElementById('gl-index-project').value.trim() || 'default',
+    model:     getModel(),
+    chunk:     +document.getElementById('gl-chunk').value || 1000,
+    overlap:   +document.getElementById('gl-overlap').value || 50,
+    redefine:  document.getElementById('gl-redefine').checked,
+    refact:    document.getElementById('gl-refact').checked,
+    crosslink: document.getElementById('gl-crosslink').checked,
+    unique:    document.getElementById('gl-unique').checked,
+    tabular:   document.getElementById('gl-tabular').checked,
+  };
+  try {
+    const res = await fetch('/vyrii/glossary/index', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() ?? '';
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const raw = line.slice(6).trim();
+        if (raw === '[DONE]') continue;
+        try {
+          const obj = JSON.parse(raw);
+          if (obj.type === 'started') {
+            _glossaryRunId = obj.run_id;
+          } else if (obj.line) {
+            log.textContent += obj.line + '\n';
+            log.scrollTop = log.scrollHeight;
+          }
+        } catch { /* ignore malformed SSE */ }
+      }
+    }
+    _glossaryRunId = null;
+    glossaryRefreshProjects();
+  } catch (e) {
+    log.textContent += '\n' + t('error_prefix') + e.message;
+  }
+}
+
+async function glossaryStopIndex() {
+  if (!_glossaryRunId) { showToast('No indexing job running'); return; }
+  try {
+    await fetch('/vyrii/glossary/index/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ run_id: _glossaryRunId }),
+    });
+    const log = document.getElementById('gl-index-log');
+    log.textContent += '\n[stopping…]\n';
+  } catch (e) {
+    showToast(t('error_prefix') + e.message);
+  }
+}
+
+async function glossaryRefreshProjects() {
+  const sel = document.getElementById('gl-project-select');
+  try {
+    const data = await (await fetch('/vyrii/glossary/projects')).json();
+    const projects = data.projects || [];
+    sel.innerHTML = '<option value="">Select…</option>' + projects.map(p =>
+      `<option value="${escHtml(p.folder)}|${escHtml(p.project)}">
+        ${escHtml(p.folder)} / ${escHtml(p.project)} (${p.term_count} terms)
+      </option>`
+    ).join('');
+  } catch (e) {
+    showToast(t('error_prefix') + e.message);
+  }
+}
+
+function glossaryPickProject(value) {
+  if (!value) { state.glossaryFolder = ''; state.glossaryProject = ''; return; }
+  const [folder, project] = value.split('|');
+  state.glossaryFolder  = folder;
+  state.glossaryProject = project;
+  document.getElementById('gl-search').value = '';
+  document.getElementById('gl-term-view').innerHTML = '';
+  glossaryLoadTerms('');
+}
+
+let _glossaryTimer = null;
+function glossarySearchTerms(q) {
+  clearTimeout(_glossaryTimer);
+  _glossaryTimer = setTimeout(() => glossaryLoadTerms(q), 280);
+}
+
+async function glossaryLoadTerms(q = '') {
+  const list = document.getElementById('gl-term-list');
+  if (!state.glossaryFolder) { list.innerHTML = ''; return; }
+  try {
+    const url = '/vyrii/glossary/terms?folder=' + encodeURIComponent(state.glossaryFolder)
+      + '&project=' + encodeURIComponent(state.glossaryProject)
+      + '&q=' + encodeURIComponent(q.trim());
+    const data = await (await fetch(url)).json();
+    const terms = data.terms || [];
+    if (!terms.length) {
+      list.innerHTML = `<div class="placeholder-text">No terms found</div>`;
+      return;
+    }
+    list.innerHTML = terms.map(term =>
+      `<button class="btn btn-ghost btn-sm" onclick="glossaryShowTerm('${term.replace(/'/g, "\\'")}')">${escHtml(term)}</button>`
+    ).join('');
+  } catch (e) {
+    list.innerHTML = `<div class="placeholder-text">${t('error_prefix')}${e.message}</div>`;
+  }
+}
+
+async function glossaryShowTerm(term) {
+  const view = document.getElementById('gl-term-view');
+  view.innerHTML = `<div class="placeholder-text">${t('loading')}</div>`;
+  try {
+    const url = '/vyrii/glossary/term?folder=' + encodeURIComponent(state.glossaryFolder)
+      + '&project=' + encodeURIComponent(state.glossaryProject)
+      + '&term=' + encodeURIComponent(term);
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!res.ok) { view.innerHTML = `<div class="placeholder-text">${escHtml(data.error || t('api_error'))}</div>`; return; }
+    const defs  = (data.definitions || []).map(d => `<li>${escHtml(d)}</li>`).join('') || '<li><em>none</em></li>';
+    const facts = (data.facts || []).map(f => `<li>${escHtml(f)}</li>`).join('') || '<li><em>none</em></li>';
+    // Full wiki-style navigation: each LINK: entry is a real clickable button
+    // that re-runs glossaryShowTerm() for that other term — simple direct JS
+    // call here, unlike the Gradio port which needs a hidden-textbox bridge
+    // since gr.HTML has no native link-click event.
+    const links = (data.links || []).map(l =>
+      `<button class="btn btn-ghost btn-sm" onclick="glossaryShowTerm('${l.replace(/'/g, "\\'")}')">${escHtml(l)}</button>`
+    ).join(' ') || '<em>none</em>';
+    view.innerHTML = `
+      <h3>${escHtml(data.term)}</h3>
+      <div class="form-label">DEFINITION</div>
+      <ul>${defs}</ul>
+      <div class="form-label">FACTS</div>
+      <ul>${facts}</ul>
+      <div class="form-label">LINK</div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px">${links}</div>`;
+  } catch (e) {
+    view.innerHTML = `<div class="placeholder-text">${t('error_prefix')}${e.message}</div>`;
   }
 }
 

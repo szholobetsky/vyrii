@@ -36,7 +36,12 @@ On-the-fly translation in four modes:
 | `online` | Google Translate | ⚠ Sends text to Google |
 
 ### Obfuscate / Deobfuscate
-Replace sensitive terms before sending to a cloud AI, then restore the response. Uses a YAML glossary in two modes: smart (LLM-based, handles grammar) and force (instant direct substitution).
+Replace sensitive terms before sending to a cloud AI, then restore the response. Uses a YAML dictionary in two modes: smart (LLM-based, handles grammar) and force (instant direct substitution).
+
+### AutoCut Context
+Non-destructive sliding context window — same underlying algorithm as 1bcoder's `/ctx window` (fixed head + sliding tail + optional summarized middle, four selectable mid algorithms), exposed as a Settings toggle instead of a command. **Off by default** for the same reason as in 1bcoder: the right window size depends entirely on the model you're running, and there's no single default that's correct for both a 1B and a 7B model. Configure it in **Settings → AutoCut Context** and it applies across all three UI modes (Flask, FastAPI, Gradio) automatically, since they share the same config file.
+
+Turn it on when you notice replies getting noticeably slower as a chat session grows, or when a request times out — especially if you've already raised the **Settings → Request timeout** to a reasonable ceiling for your hardware and it's *still* timing out. At that point, waiting longer won't help; the context has grown past what the model can process promptly, and trimming it is the actual fix.
 
 ### RAG
 Search a simargl semantic index by project. Ask the LLM to synthesise an answer from retrieved chunks. Works with indexes built by the simargl tool or the WebIndex tab.
@@ -75,7 +80,7 @@ Background task scheduler. Create recurring or one-off tasks (daily, weekly, int
 Manage parallel worker profiles for the Team tab. Each profile defines a set of models/hosts with aspect roles.
 
 ### Settings
-Switch theme (including GithubDark, Dracula, Solarized), language (EN/UK), timeout, and backend connection. Changes apply on the next session start.
+Switch theme (including GithubDark, Dracula, Solarized), language (EN/UK), timeout, and backend connection. Also where **AutoCut Context** is configured (see above) — request timeout lives here too, and the two work together: raise the timeout first for a reasonably slow model, and once that ceiling stops being enough, turn on AutoCut instead of raising it further.
 
 ---
 
@@ -292,6 +297,7 @@ vyrii/
 │   ├── flask_api.py     # Flask REST server (default, zero Rust deps)
 │   ├── engine.py        # LLM streaming, model listing, smart context
 │   ├── adapter.py       # ChatAdapter — unified interface for flows
+│   ├── ctxwindow.py     # AutoCut Context — sliding window projection (self-contained port of 1bcoder's /ctx window)
 │   ├── tools.py         # fetch_text, HTML stripping
 │   ├── history.py       # SQLite chat history
 │   ├── scheduler.py     # background task scheduler
@@ -306,6 +312,7 @@ vyrii/
 │       ├── webindex.py  # crawl + simargl index flow
 │       ├── deepagent_md.py  # multi-section document generation
 │       ├── scan.py      # large-file compaction flow
+│       ├── glossary.py  # LLM-wiki knowledge base builder (self-contained port of 1bcoder's /flow glossary)
 │       ├── obfuscate.py
 │       └── deobfuscate.py
 ├── images/

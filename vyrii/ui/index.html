@@ -73,6 +73,10 @@
         <span class="ni-icon">📁</span>
         <span class="ni-label" data-i18n="tab_files">Files</span>
       </button>
+      <button class="nav-item" data-tab="glossary">
+        <span class="ni-icon">📖</span>
+        <span class="ni-label">Glossary</span>
+      </button>
       <button class="nav-item" data-tab="profile">
         <span class="ni-icon">🖥️</span>
         <span class="ni-label" data-i18n="tab_profile">Profiles</span>
@@ -629,8 +633,8 @@
             </div>
             <div class="form-row">
               <div class="form-group flex-grow">
-                <label class="form-label" data-i18n="glossary">Glossary</label>
-                <textarea id="of-glossary" class="form-control" rows="4"
+                <label class="form-label" data-i18n="dictionary">Dictionary</label>
+                <textarea id="of-dict" class="form-control" rows="4"
                   style="font-family:'Cascadia Code','Fira Code','Consolas',monospace;font-size:12.5px"
                   placeholder="tanker: vessel&#10;oil:    liquid cargo&#10;port:   loading terminal"></textarea>
               </div>
@@ -658,8 +662,8 @@
             </div>
             <div class="form-row">
               <div class="form-group flex-grow">
-                <label class="form-label" data-i18n="glossary">Glossary</label>
-                <textarea id="dof-glossary" class="form-control" rows="4"
+                <label class="form-label" data-i18n="dictionary">Dictionary</label>
+                <textarea id="dof-dict" class="form-control" rows="4"
                   style="font-family:'Cascadia Code','Fira Code','Consolas',monospace;font-size:12.5px"
                   placeholder="tanker: vessel&#10;oil:    liquid cargo&#10;port:   loading terminal"></textarea>
               </div>
@@ -1060,6 +1064,74 @@
           <div class="placeholder-text" style="padding:40px 0;text-align:center" data-i18n="select_file">
             Select a file or folder
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── GLOSSARY ── -->
+    <div class="tab-panel" id="tab-glossary">
+      <div class="panel-header">
+        <h1 class="ph-title">Glossary</h1>
+      </div>
+      <div class="panel-body" style="gap:16px">
+        <div class="settings-section">
+          <h3>Index a folder</h3>
+          <div class="form-row">
+            <div class="form-group flex-grow">
+              <label class="form-label">Folder (relative to ~/.vyrii)</label>
+              <input id="gl-index-path" type="text" class="form-control" placeholder="AnimalAlert">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Project</label>
+              <input id="gl-index-project" type="text" class="form-control" value="default">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Chunk (tokens)</label>
+              <input id="gl-chunk" type="number" class="form-control form-control-sm" value="1000">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Overlap (tokens)</label>
+              <input id="gl-overlap" type="number" class="form-control form-control-sm" value="50">
+            </div>
+          </div>
+          <div class="form-group">
+            <label><input type="checkbox" id="gl-redefine"> --redefine</label>
+            <label><input type="checkbox" id="gl-refact"> --refact</label>
+            <label><input type="checkbox" id="gl-crosslink"> --crosslink</label>
+            <label><input type="checkbox" id="gl-unique"> --unique</label>
+            <label><input type="checkbox" id="gl-tabular"> --tabular</label>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" onclick="glossaryRunIndex()">Run index</button>
+            <button class="btn btn-danger" onclick="glossaryStopIndex()">Stop</button>
+          </div>
+          <div id="gl-index-log" style="margin-top:10px;font-family:monospace;font-size:12px;
+               max-height:200px;overflow-y:auto;white-space:pre-wrap"></div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Browse</h3>
+          <div class="form-row">
+            <div class="form-group flex-grow">
+              <label class="form-label">Glossary (folder / project)</label>
+              <select id="gl-project-select" class="form-control" onchange="glossaryPickProject(this.value)">
+                <option value="">Select…</option>
+              </select>
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="glossaryRefreshProjects()"
+                    style="align-self:flex-end;margin-bottom:6px">Refresh</button>
+          </div>
+          <div class="form-row">
+            <div class="form-group flex-grow">
+              <label class="form-label">Search terms</label>
+              <input id="gl-search" type="text" class="form-control"
+                     oninput="glossarySearchTerms(this.value)" placeholder="Filter terms…">
+            </div>
+          </div>
+          <div id="gl-term-list" style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0"></div>
+          <div id="gl-term-view" style="border-top:1px solid var(--border,#333);padding-top:10px"></div>
         </div>
       </div>
     </div>

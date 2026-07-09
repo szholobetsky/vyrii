@@ -123,7 +123,7 @@ class TeamRunRequest(BaseModel):
 
 class ObfuscateRequest(BaseModel):
     text: str
-    glossary: str
+    dictionary: str
     force: bool = False
     model: str = ""
 
@@ -138,7 +138,7 @@ class CtxtimerRunRequest(BaseModel):
 
 class DeobfuscateRequest(BaseModel):
     text: str
-    glossary: str
+    dictionary: str
     force: bool = False
     model: str = ""
 
@@ -153,6 +153,18 @@ class FileDeleteRequest(BaseModel):
 
 class FileIndexRequest(BaseModel):
     path: str
+
+class GlossaryIndexRequest(BaseModel):
+    path:      str
+    project:   str = "default"
+    model:     str = ""
+    chunk:     int = 1000
+    overlap:   int = 50
+    redefine:  bool = False
+    refact:    bool = False
+    crosslink: bool = False
+    unique:    bool = False
+    tabular:   bool = False
 
 class SettingsRequest(BaseModel):
     saved_url:                str | None = None
@@ -746,8 +758,8 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
 
     import tempfile as _tmpf, os as _os3
 
-    def _glossary_tempfile(content: str) -> str:
-        """Write glossary YAML content to a temp file; return its path."""
+    def _dict_tempfile(content: str) -> str:
+        """Write dictionary YAML content to a temp file; return its path."""
         tmp = _tmpf.NamedTemporaryFile(
             mode="w", suffix=".yaml", delete=False, encoding="utf-8"
         )
@@ -759,19 +771,19 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
     def obfuscate(req: ObfuscateRequest):
         from .adapter import ChatAdapter
         from .flows import obfuscate as _of
-        if not req.glossary.strip():
-            return {"error": "glossary is required"}
+        if not req.dictionary.strip():
+            return {"error": "dictionary is required"}
         model   = req.model or _default_model()
         adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
         adapter._last_output = req.text
-        gpath   = _glossary_tempfile(req.glossary)
-        args    = f'--glossary {gpath}'
+        dpath   = _dict_tempfile(req.dictionary)
+        args    = f'--dict {dpath}'
         if req.force:
             args += ' --force'
         try:
             _of.run(adapter, args)
         finally:
-            try: _os3.unlink(gpath)
+            try: _os3.unlink(dpath)
             except Exception: pass
         return {"result": adapter.last_reply or ""}
 
@@ -781,19 +793,19 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
     def deobfuscate(req: DeobfuscateRequest):
         from .adapter import ChatAdapter
         from .flows import deobfuscate as _dof
-        if not req.glossary.strip():
-            return {"error": "glossary is required"}
+        if not req.dictionary.strip():
+            return {"error": "dictionary is required"}
         model   = req.model or _default_model()
         adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
         adapter._last_output = req.text
-        gpath   = _glossary_tempfile(req.glossary)
-        args    = f'--glossary {gpath}'
+        dpath   = _dict_tempfile(req.dictionary)
+        args    = f'--dict {dpath}'
         if req.force:
             args += ' --force'
         try:
             _dof.run(adapter, args)
         finally:
-            try: _os3.unlink(gpath)
+            try: _os3.unlink(dpath)
             except Exception: pass
         return {"result": adapter.last_reply or ""}
 
@@ -1141,6 +1153,100 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
             return {"error": result.stderr[:500]}
         except Exception as e:
             return {"error": str(e)}
+
+    # ── /vyrii/glossary/* ─────────────────────────────────────────────────────
+    # /flow glossary ported into vyrii/flows/glossary.py (self-contained copy,
+    # same convention as ctxwindow.py) — mirrors flask_api.py's routes 1:1.
+
+    def _glossary_index_args(req: "GlossaryIndexRequest") -> str:
+        project = req.project.strip() or "default"
+        args = f'--project {project} --chunk {req.chunk} --overlap {req.overlap}'
+        for flag in ("redefine", "refact", "crosslink", "unique", "tabular"):
+            if getattr(req, flag):
+                args += f' --{flag}'
+        return args
+
+    # run_id -> {"stop": bool} — same pattern as _ctxtimer_cancel_flags: a
+    # background indexing job can't receive Ctrl+C (that's 1bcoder-CLI-only,
+    # SIGINT isn't delivered to worker threads), so the Stop button flips
+    # this flag instead; glossary.py's _llm() checks it before/after every
+    # LLM call via chat._glossary_should_cancel.
+    _glossary_cancel_flags: dict = {}
+
+    @app.post("/vyrii/glossary/index")
+    def glossary_index(req: GlossaryIndexRequest):
+        from .adapter import ChatAdapter, stream_flow_lines
+        from .flows import glossary as _gl
+        model = req.model or _default_model()
+        target = _fsafe(req.path)
+        if not target.is_dir():
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail=f"Not a directory: {req.path}")
+
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
+        args = f'index "{target}" ' + _glossary_index_args(req)
+
+        cancel_flag = {"stop": False}
+        run_id = str(uuid.uuid4())
+        _glossary_cancel_flags[run_id] = cancel_flag
+        adapter._glossary_should_cancel = lambda: cancel_flag["stop"]
+
+        def _gen():
+            def _run():
+                _gl.set_base_dir(str(target))
+                _gl.run(adapter, args)
+            try:
+                yield f'data: {json.dumps({"type": "started", "run_id": run_id})}\n\n'
+                for line in stream_flow_lines(_run):
+                    yield f'data: {json.dumps({"type": "line", "line": line})}\n\n'
+            finally:
+                _glossary_cancel_flags.pop(run_id, None)
+                yield 'data: [DONE]\n\n'
+
+        return StreamingResponse(_gen(), media_type="text/event-stream")
+
+    @app.post("/vyrii/glossary/index/cancel")
+    def glossary_index_cancel(body: dict):
+        flag = _glossary_cancel_flags.get(body.get("run_id", ""))
+        if flag is not None:
+            flag["stop"] = True
+        return {"ok": True}
+
+    @app.get("/vyrii/glossary/projects")
+    def glossary_projects():
+        from .flows import glossary as _gl
+        results = _gl.list_glossaries(str(_FHOME))
+        for r in results:
+            try:
+                r["folder"] = str(_FP(r["folder"]).relative_to(_FHOME))
+            except ValueError:
+                pass
+        return {"projects": results}
+
+    @app.get("/vyrii/glossary/terms")
+    def glossary_terms(folder: str = "", project: str = "default", q: str = ""):
+        from .flows import glossary as _gl
+        base = _fsafe(folder)
+        _gl.set_base_dir(str(base))
+        terms = _gl._load_terms(project.strip() or "default")
+        query = q.strip().lower()
+        if query:
+            terms = [t for t in terms if query in t]
+        return {"terms": terms}
+
+    @app.get("/vyrii/glossary/term")
+    def glossary_term(folder: str = "", project: str = "default", term: str = ""):
+        from .flows import glossary as _gl
+        if not term.strip():
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail="term is required")
+        base = _fsafe(folder)
+        _gl.set_base_dir(str(base))
+        project = project.strip() or "default"
+        if not _FP(_gl._term_path(project, term)).is_file():
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail=f"no such term: {_gl._kebab(term)}")
+        return _gl._read_term_file(project, term)
 
     # ── /vyrii/team/* ────────────────────────────────────────────────────────
 

@@ -29,6 +29,52 @@ import requests as _requests
 from .engine import complete, BACKEND_OLLAMA, DEFAULT_OLLAMA, parse_model_spec
 
 
+def stream_flow_lines(run_fn):
+    """Run run_fn() in a background thread, capture its stdout/stderr, and
+    yield each printed line as it arrives (stripped, blank lines skipped).
+
+    Shared by all three vyrii UIs for any flow that reports progress via
+    plain print() (the 1bcoder-flow convention) instead of a progress_cb:
+    Gradio's app.py::_stream_flow wraps this into its markdown-log-block
+    accumulation; Flask/FastAPI routes wrap it into SSE `data: ...\\n\\n` frames.
+    """
+    import threading as _th
+    import queue as _q
+    import sys, io
+
+    q = _q.Queue()
+
+    class _W(io.TextIOBase):
+        def write(self, s):
+            if s:
+                q.put(s)
+            return len(s) if s else 0
+        def flush(self):
+            pass
+
+    def _worker():
+        old_out, old_err = sys.stdout, sys.stderr
+        sys.stdout = _W()
+        sys.stderr = _W()
+        try:
+            run_fn()
+        except Exception as e:
+            import traceback as _tb
+            q.put(f"\n[ERROR] {e}\n{_tb.format_exc()}\n")
+        finally:
+            sys.stdout, sys.stderr = old_out, old_err
+            q.put(None)
+
+    _th.Thread(target=_worker, daemon=True).start()
+    while True:
+        item = q.get()
+        if item is None:
+            break
+        text = item.rstrip('\n')
+        if text.strip():
+            yield text
+
+
 class ChatAdapter:
     def __init__(
         self,
