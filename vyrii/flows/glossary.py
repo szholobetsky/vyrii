@@ -108,13 +108,15 @@ _STOP_IDENT = {"i", "j", "k", "n", "x", "y", "z", "tmp", "idx", "cnt", "a", "b",
 
 
 # ── glossary storage ────────────────────────────────────────────────────────
-# vyrii-specific divergence from the 1bcoder original: storage is os.getcwd()
-# -relative there, fine for a single-threaded CLI REPL. A web server can run
-# concurrent requests indexing different folders in different background
-# threads (see adapter.stream_flow_lines) — os.chdir() is process-global, so
-# two such requests would race on the shared cwd. set_base_dir() pins the
-# base directory thread-locally instead; unset (the 1bcoder CLI case) falls
-# back to os.getcwd(), unchanged from upstream.
+# vyrii-specific divergence from the 1bcoder original: the CLI stores each
+# glossary inside the indexed folder itself (.1bcoder/glossary/<project>/,
+# os.getcwd()-relative). That colocation makes no sense for a web server
+# indexing folders it doesn't own — it writes tool metadata into arbitrary
+# document folders under a different tool's name. vyrii instead centralizes
+# every glossary under a single, fixed, project-independent location, so the
+# Glossary tab's project picker never has to search for them — it always
+# knows exactly where to look, no path registry needed.
+OUTPUT_WORKING_DIR = _os.path.expanduser(_os.path.join("~", ".vyrii", "glossary"))
 
 import threading as _threading
 
@@ -131,7 +133,7 @@ def _base_dir() -> str:
 
 def _glossary_dir(project: str) -> str:
     proj = project or "default"
-    d = _os.path.join(_base_dir(), ".1bcoder", "glossary", proj)
+    d = _os.path.join(OUTPUT_WORKING_DIR, proj)
     _os.makedirs(d, exist_ok=True)
     return d
 
@@ -179,26 +181,24 @@ def _sort_glossary(project: str) -> None:
         f.write("\n".join(terms) + ("\n" if terms else ""))
 
 
-def list_glossaries(root: str) -> list:
-    """Walk `root` for every <folder>/.1bcoder/glossary/<project>/glossary.md
-    and return [{"folder": ..., "project": ..., "term_count": ...}, ...],
-    sorted by folder then project. vyrii-specific addition (not part of the
-    1bcoder flow's own CLI surface) — powers the Glossary tab's global project
-    picker, which lists every glossary found anywhere under the vyrii Files
-    root rather than being scoped to whatever folder is currently selected."""
+def list_glossaries(root: str = None) -> list:
+    """List every glossary under OUTPUT_WORKING_DIR (~/.vyrii/glossary/<project>/
+    glossary.md) and return [{"folder": ..., "project": ..., "term_count": ...}, ...],
+    sorted by project. `root` is accepted and ignored — kept only so existing
+    call sites (which used to pass the vyrii Files root for a recursive search)
+    don't need updating; storage is centralized now, so there is nothing to
+    search for, only a fixed directory to list."""
     results = []
-    for dirpath, dirnames, filenames in _os.walk(root):
-        if "glossary.md" not in filenames:
+    if not _os.path.isdir(OUTPUT_WORKING_DIR):
+        return results
+    for project in sorted(_os.listdir(OUTPUT_WORKING_DIR)):
+        gpath = _os.path.join(OUTPUT_WORKING_DIR, project, "glossary.md")
+        if not _os.path.isfile(gpath):
             continue
-        if _os.path.basename(_os.path.dirname(dirpath)) != "glossary" or \
-           _os.path.basename(_os.path.dirname(_os.path.dirname(dirpath))) != ".1bcoder":
-            continue
-        project = _os.path.basename(dirpath)
-        folder = _os.path.dirname(_os.path.dirname(_os.path.dirname(dirpath)))
-        with open(_os.path.join(dirpath, "glossary.md"), encoding="utf-8") as f:
+        with open(gpath, encoding="utf-8") as f:
             term_count = sum(1 for l in f if l.strip())
-        results.append({"folder": folder, "project": project, "term_count": term_count})
-    return sorted(results, key=lambda r: (r["folder"], r["project"]))
+        results.append({"folder": OUTPUT_WORKING_DIR, "project": project, "term_count": term_count})
+    return results
 
 
 def _read_term_file(project: str, term: str) -> dict:
@@ -592,10 +592,15 @@ def _llm(chat, system: str, prompt: str) -> str:
     msgs = [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
     while True:
         try:
-            result = (chat._stream_chat(msgs) or "").strip()
-            _check_cancel(chat)
-            return result
+            raw = chat._stream_chat(msgs)
         except KeyboardInterrupt:
+            raw = None
+        # 1bcoder's real _stream_chat already catches KeyboardInterrupt itself
+        # (prints "[interrupted]") and returns None as a sentinel rather than
+        # re-raising -- so None, not a caught KeyboardInterrupt, is the normal
+        # signal that Ctrl+C fired. Still catch KeyboardInterrupt above too, in
+        # case a _stream_chat implementation ever does propagate it directly.
+        if raw is None:
             action = _on_ctrl_c()
             if action == "quit":
                 raise _StopIndexing()
@@ -608,6 +613,10 @@ def _llm(chat, system: str, prompt: str) -> str:
                         {"role": "user", "content": prompt + f"\n\nAdditional instruction: {hint}"}]
             else:
                 print("  [glossary] retrying...")
+            continue
+        result = raw.strip()
+        _check_cancel(chat)
+        return result
 
 
 _TERMS_SYSTEM = (

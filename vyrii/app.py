@@ -3489,11 +3489,6 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                         return "", "default", gr.update(choices=[]), ""
                     folder, _, project = value.partition("|")
                     from .flows import glossary as _gl
-                    try:
-                        base = _resolve_safe(folder)
-                    except Exception:
-                        return folder, project, gr.update(choices=[]), ""
-                    _gl.set_base_dir(str(base))
                     terms = _gl._load_terms(project)
                     return folder, project, gr.update(choices=terms, value=None), ""
 
@@ -3506,11 +3501,6 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     from .flows import glossary as _gl
                     if not folder:
                         return gr.update(choices=[])
-                    try:
-                        base = _resolve_safe(folder)
-                    except Exception:
-                        return gr.update(choices=[])
-                    _gl.set_base_dir(str(base))
                     terms = _gl._load_terms(project)
                     q = (query or "").strip().lower()
                     if q:
@@ -3527,11 +3517,6 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     import html as _html
                     if not term or not folder:
                         return ""
-                    try:
-                        base = _resolve_safe(folder)
-                    except Exception:
-                        return ""
-                    _gl.set_base_dir(str(base))
                     if not _pathlib.Path(_gl._term_path(project, term)).is_file():
                         return f"<p><em>No such term: {_html.escape(_gl._kebab(term))}</em></p>"
                     data = _gl._read_term_file(project, term)

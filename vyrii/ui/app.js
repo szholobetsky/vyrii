@@ -102,6 +102,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   applyLang(state.lang);
   loadThemes();
   setupTabNav();
+  loadTools();
 
   // Shift+Enter submits on all tabs (find nearest btn-primary in same panel)
   document.addEventListener('keydown', e => {
@@ -362,7 +363,7 @@ function switchTab(tab) {
     refreshFiles();
   }
   if (tab === 'rag')      ragRefreshProjects();
-  if (tab === 'settings') loadSettings();
+  if (tab === 'settings') { loadSettings(); loadTools(); }
   if (tab === 'profile')   profileLoad();
   if (tab === 'team')      teamLoadProfiles();
   if (tab === 'scheduler') schRefresh();
@@ -1993,6 +1994,90 @@ async function saveAuth() {
     } else {
       showToast(data.error || t('api_error'));
     }
+  } catch (e) {
+    showToast(t('error_prefix') + e.message);
+  }
+}
+
+// ── external tools bar (same config.json "external_tools" as Gradio) ──
+
+function _toolsBarHtml(tools) {
+  return tools.map(t => `<a href="http://localhost:${t.port}" target="_blank" class="tool-link">`
+    + `${t.name} :${t.port}</a>`).join('');
+}
+
+function _toolsEditorHtml(tools) {
+  return tools.map((t, i) => `
+    <div class="form-row tool-row" data-idx="${i}">
+      <input class="form-control" placeholder="Name" value="${(t.name || '').replace(/"/g, '&quot;')}">
+      <input class="form-control form-control-sm" type="number" min="1" max="65535"
+             style="width:100px" value="${t.port}">
+      <button class="btn btn-ghost btn-sm" onclick="removeToolRow(this)" title="Remove">×</button>
+    </div>`).join('');
+}
+
+async function loadTools() {
+  try {
+    const res = await fetch('/vyrii/tools');
+    const data = await res.json();
+    state._tools = data.tools || [];
+    const bar = document.getElementById('tools-bar');
+    if (bar) bar.innerHTML = _toolsBarHtml(state._tools);
+    const editor = document.getElementById('tools-editor');
+    if (editor) editor.innerHTML = _toolsEditorHtml(state._tools);
+  } catch { /* offline — leave bar empty */ }
+}
+
+function addToolRow() {
+  const editor = document.getElementById('tools-editor');
+  if (!editor) return;
+  const row = document.createElement('div');
+  row.className = 'form-row tool-row';
+  row.innerHTML = `
+    <input class="form-control" placeholder="Name" value="">
+    <input class="form-control form-control-sm" type="number" min="1" max="65535" style="width:100px" value="8080">
+    <button class="btn btn-ghost btn-sm" onclick="removeToolRow(this)" title="Remove">×</button>`;
+  editor.appendChild(row);
+}
+
+function removeToolRow(btn) {
+  btn.closest('.tool-row')?.remove();
+}
+
+function _readToolRows() {
+  return [...document.querySelectorAll('#tools-editor .tool-row')].map(row => {
+    const inputs = row.querySelectorAll('input');
+    return { name: inputs[0].value.trim(), port: +inputs[1].value };
+  }).filter(t => t.name && t.port);
+}
+
+async function saveTools() {
+  const tools = _readToolRows();
+  try {
+    const res = await fetch('/vyrii/tools', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tools }),
+    });
+    const data = await res.json();
+    state._tools = data.tools || [];
+    document.getElementById('tools-bar').innerHTML = _toolsBarHtml(state._tools);
+    document.getElementById('tools-editor').innerHTML = _toolsEditorHtml(state._tools);
+    const s = document.getElementById('tools-status');
+    s.style.display = 'inline';
+    setTimeout(() => { s.style.display = 'none'; }, 1500);
+  } catch (e) {
+    showToast(t('error_prefix') + e.message);
+  }
+}
+
+async function resetTools() {
+  try {
+    const res = await fetch('/vyrii/tools/reset', { method: 'POST' });
+    const data = await res.json();
+    state._tools = data.tools || [];
+    document.getElementById('tools-bar').innerHTML = _toolsBarHtml(state._tools);
+    document.getElementById('tools-editor').innerHTML = _toolsEditorHtml(state._tools);
   } catch (e) {
     showToast(t('error_prefix') + e.message);
   }

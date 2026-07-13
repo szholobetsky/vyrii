@@ -699,6 +699,63 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         except Exception as e:
             return jsonify({"error": str(e)})
 
+    # ── /vyrii/tools — external services bar, shared config.json with Gradio ──
+    # ("external_tools" key — the same one app.py's _load_tools/_save_tools
+    # read/write, so a tool added here shows up in the Gradio UI too and
+    # vice versa, no separate storage).
+
+    _DEFAULT_TOOLS = [
+        {"name": "SIMARGL", "port": 7861},
+        {"name": "SVITOVYD", "port": 7860},
+    ]
+
+    def _valid_tool(name, port):
+        try:
+            port = int(port)
+        except (TypeError, ValueError):
+            return None
+        name = str(name or "").strip().upper()
+        if not name or not (1 <= port <= 65535):
+            return None
+        return {"name": name, "port": port}
+
+    @app.route("/vyrii/tools", methods=["GET"])
+    def tools_get():
+        cfg = _read_cfg()
+        return jsonify({"tools": cfg.get("external_tools", list(_DEFAULT_TOOLS))})
+
+    @app.route("/vyrii/tools", methods=["POST"])
+    def tools_save():
+        body = request.get_json(silent=True) or {}
+        tools, seen_ports = [], set()
+        for t in body.get("tools", []):
+            v = _valid_tool(t.get("name"), t.get("port"))
+            if v and v["port"] not in seen_ports:
+                tools.append(v)
+                seen_ports.add(v["port"])
+        if not tools:
+            tools = list(_DEFAULT_TOOLS)
+        _write_cfg({"external_tools": tools})
+        return jsonify({"ok": True, "tools": tools})
+
+    @app.route("/vyrii/tools/add", methods=["POST"])
+    def tools_add():
+        body = request.get_json(silent=True) or {}
+        v = _valid_tool(body.get("name"), body.get("port"))
+        if not v:
+            return jsonify({"error": "name and a valid port (1-65535) are required"}), 400
+        cfg = _read_cfg()
+        tools = cfg.get("external_tools", list(_DEFAULT_TOOLS))
+        if not any(t["port"] == v["port"] for t in tools):
+            tools.append(v)
+            _write_cfg({"external_tools": tools})
+        return jsonify({"ok": True, "tools": tools})
+
+    @app.route("/vyrii/tools/reset", methods=["POST"])
+    def tools_reset():
+        _write_cfg({"external_tools": list(_DEFAULT_TOOLS)})
+        return jsonify({"ok": True, "tools": list(_DEFAULT_TOOLS)})
+
     @app.route("/vyrii/stats", methods=["GET"])
     def vyrii_stats():
         return jsonify({"stats": _stats.get_stats(), "locks": _stats.get_all_locks()})
@@ -1118,14 +1175,8 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
     @app.route("/vyrii/glossary/terms", methods=["GET"])
     def glossary_terms():
         from .flows import glossary as _gl
-        folder  = request.args.get("folder", "").strip()
         project = request.args.get("project", "default").strip() or "default"
         query   = request.args.get("q", "").strip().lower()
-        try:
-            base = _fsafe(folder)
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 400
-        _gl.set_base_dir(str(base))
         terms = _gl._load_terms(project)
         if query:
             terms = [t for t in terms if query in t]
@@ -1134,16 +1185,10 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
     @app.route("/vyrii/glossary/term", methods=["GET"])
     def glossary_term():
         from .flows import glossary as _gl
-        folder  = request.args.get("folder", "").strip()
         project = request.args.get("project", "default").strip() or "default"
         term    = request.args.get("term", "").strip()
         if not term:
             return jsonify({"error": "term is required"}), 400
-        try:
-            base = _fsafe(folder)
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 400
-        _gl.set_base_dir(str(base))
         if not os.path.isfile(_gl._term_path(project, term)):
             return jsonify({"error": f"no such term: {_gl._kebab(term)}"}), 404
         return jsonify(_gl._read_term_file(project, term))

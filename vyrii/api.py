@@ -191,6 +191,13 @@ class SettingsRequest(BaseModel):
     autocut_limit:            int | None = None
     autocut_algo:             str | None = None
 
+class ToolEntry(BaseModel):
+    name: str
+    port: int
+
+class ToolsSaveRequest(BaseModel):
+    tools: list[ToolEntry] = []
+
 class LockRequest(BaseModel):
     host:   str
     action: str = "lock"
@@ -849,6 +856,62 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         except Exception as e:
             return {"error": str(e)}
 
+    # ── /vyrii/tools — external services bar, shared config.json with Gradio ──
+    # ("external_tools" key — the same one app.py's _load_tools/_save_tools
+    # read/write, so a tool added here shows up in the Gradio UI too and
+    # vice versa, no separate storage).
+
+    _DEFAULT_TOOLS = [
+        {"name": "SIMARGL", "port": 7861},
+        {"name": "SVITOVYD", "port": 7860},
+    ]
+
+    def _valid_tool(name, port):
+        try:
+            port = int(port)
+        except (TypeError, ValueError):
+            return None
+        name = str(name or "").strip().upper()
+        if not name or not (1 <= port <= 65535):
+            return None
+        return {"name": name, "port": port}
+
+    @app.get("/vyrii/tools")
+    def tools_get():
+        cfg = _read_cfg()
+        return {"tools": cfg.get("external_tools", list(_DEFAULT_TOOLS))}
+
+    @app.post("/vyrii/tools")
+    def tools_save(req: ToolsSaveRequest):
+        tools, seen_ports = [], set()
+        for t in req.tools:
+            v = _valid_tool(t.name, t.port)
+            if v and v["port"] not in seen_ports:
+                tools.append(v)
+                seen_ports.add(v["port"])
+        if not tools:
+            tools = list(_DEFAULT_TOOLS)
+        _write_cfg({"external_tools": tools})
+        return {"ok": True, "tools": tools}
+
+    @app.post("/vyrii/tools/add")
+    def tools_add(req: ToolEntry):
+        v = _valid_tool(req.name, req.port)
+        if not v:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail="name and a valid port (1-65535) are required")
+        cfg = _read_cfg()
+        tools = cfg.get("external_tools", list(_DEFAULT_TOOLS))
+        if not any(t["port"] == v["port"] for t in tools):
+            tools.append(v)
+            _write_cfg({"external_tools": tools})
+        return {"ok": True, "tools": tools}
+
+    @app.post("/vyrii/tools/reset")
+    def tools_reset():
+        _write_cfg({"external_tools": list(_DEFAULT_TOOLS)})
+        return {"ok": True, "tools": list(_DEFAULT_TOOLS)}
+
     @app.get("/vyrii/stats")
     def vyrii_stats():
         return {"stats": _stats.get_stats(), "locks": _stats.get_all_locks()}
@@ -1226,8 +1289,6 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
     @app.get("/vyrii/glossary/terms")
     def glossary_terms(folder: str = "", project: str = "default", q: str = ""):
         from .flows import glossary as _gl
-        base = _fsafe(folder)
-        _gl.set_base_dir(str(base))
         terms = _gl._load_terms(project.strip() or "default")
         query = q.strip().lower()
         if query:
@@ -1240,8 +1301,6 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         if not term.strip():
             from fastapi import HTTPException
             raise HTTPException(status_code=400, detail="term is required")
-        base = _fsafe(folder)
-        _gl.set_base_dir(str(base))
         project = project.strip() or "default"
         if not _FP(_gl._term_path(project, term)).is_file():
             from fastapi import HTTPException

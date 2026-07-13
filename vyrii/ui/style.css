@@ -215,6 +215,32 @@ a:hover { text-decoration: underline; }
   min-width: 0;
 }
 
+/* ── EXTERNAL TOOLS BAR ───────────────────────────────── */
+.tools-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  flex-shrink: 0;
+}
+.tools-bar:empty { display: none; }
+.tool-link {
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--text);
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  opacity: 0.8;
+}
+.tool-link:hover { opacity: 1; border-color: var(--accent); }
+.tool-row { align-items: center; margin-bottom: 6px; }
+.tool-row input { flex: 1; }
+
 /* ── PANEL HEADER ─────────────────────────────────────── */
 .panel-header {
   display: flex;
