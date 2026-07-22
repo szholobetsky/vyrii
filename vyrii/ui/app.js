@@ -510,15 +510,22 @@ function md(text) {
 function copyMsgRaw(idx) {
   const msg = state.chatMessages[idx];
   if (!msg) return;
-  navigator.clipboard.writeText(msg.content)
-    .then(() => showToast(t('copied')))
-    .catch(() => {
-      const ta = document.createElement('textarea');
-      ta.value = msg.content; ta.style.position = 'fixed'; ta.style.opacity = '0';
-      document.body.appendChild(ta); ta.select();
-      document.execCommand('copy'); document.body.removeChild(ta);
-      showToast(t('copied'));
-    });
+  _copyText(msg.content);
+}
+
+function downloadMsgMd(idx) {
+  const msg = state.chatMessages[idx];
+  if (!msg) return;
+  const blob = new Blob([msg.content], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${msg.role === 'user' ? 'message' : 'response'}-${stamp}.md`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function copyMsgFmt(idx) {
@@ -549,16 +556,31 @@ function _fallbackCopyFmt(el) {
   showToast(t('copied'));
 }
 
+function _copyText(text) {
+  const fallback = () => {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    showToast(t('copied'));
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => showToast(t('copied'))).catch(fallback);
+  } else {
+    fallback();
+  }
+}
+
 function copyKatexSrc(btn) {
   const wrap = btn.parentElement;
   const src = wrap?.dataset.tex || '';
-  navigator.clipboard.writeText(src).then(() => showToast(t('copied')));
+  _copyText(src);
 }
 
 function copyMermaidSrc(btn) {
   const pre = btn.parentElement.querySelector('pre.mermaid');
   const src = pre?.dataset.src || pre?.textContent || '';
-  navigator.clipboard.writeText(src).then(() => showToast(t('copied')));
+  _copyText(src);
 }
 
 function retryMsg(idx) {
@@ -620,7 +642,7 @@ function copyResult(id) {
   const el = document.getElementById(id);
   if (!el) return;
   const text = el.innerText || el.textContent;
-  navigator.clipboard.writeText(text).then(() => showToast(t('copied')));
+  _copyText(text);
 }
 
 function addToChat(id) {
@@ -832,6 +854,7 @@ function renderChatMessages() {
           <div class="bubble">${content}${cursor}</div>
           <div class="msg-copy-group">
             <button class="msg-copy" onclick="copyMsgRaw(${i})" title="${t('copy_raw')}">MD</button>
+            <button class="msg-copy" onclick="downloadMsgMd(${i})" title="${t('download_md')}">&#128190;</button>
             <button class="msg-copy" onclick="copyMsgFmt(${i})" title="${t('copy_fmt')}">&#128203;</button>${
               !isUser ? `<button class="msg-copy msg-retry" onclick="retryMsg(${i})" title="${t('retry_msg')}">&#x21bb;</button>` : ''}
           </div>
@@ -1304,7 +1327,7 @@ function addInterviewToChat() {
 
 function copyInterview() {
   const text = _formatInterviewText();
-  navigator.clipboard.writeText(text).then(() => showToast(t('copied')));
+  _copyText(text);
 }
 
 // ── SCAN ──────────────────────────────────────────────
@@ -2976,7 +2999,7 @@ function prmAddToChat(id) {
 function prmCopy(id) {
   const p = _prmAll.find(x => x.id === id);
   if (!p) return;
-  navigator.clipboard.writeText(p.prompt).then(() => showToast(t('copied')));
+  _copyText(p.prompt);
 }
 
 // ── CTXTIMER (Settings > Diagnostics) ─────────────────────────────────────
