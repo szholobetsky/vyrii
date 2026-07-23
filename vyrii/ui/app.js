@@ -821,13 +821,26 @@ async function loadHistoryChat(chatId) {
   try {
     const data = await (await fetch('/vyrii/history/chats/' + chatId)).json();
     if (data.error) { showToast(data.error); return; }
-    state.chatMessages = data.messages || [];
+    const allMsgs = data.messages || [];
+    // The role (if any) was saved as a hidden system message #0 — keep it out
+    // of the rendered bubble list, but restore it so continuing this chat
+    // still uses it (previously this was always reset to null on load).
+    const rolePrompt = (allMsgs.find(m => m.role === 'system') || {}).content || null;
+    state.chatMessages = allMsgs.filter(m => m.role !== 'system');
     state.chatId       = chatId;
     state.savedCount   = state.chatMessages.length;
-    state.rolePrompt   = null;
+    state.rolePrompt   = rolePrompt;
     state.roleName     = null;
     _hideRolePicker();
-    _hideActiveRoleLabel();
+    if (rolePrompt) {
+      // best-effort: show the role's name if it's still in the library
+      fetch('/vyrii/roles').then(r => r.json()).then(d => {
+        const match = (d.roles || []).find(x => x.prompt === rolePrompt);
+        if (match) { state.roleName = match.name; _showActiveRoleLabel(match.name); }
+      }).catch(() => {});
+    } else {
+      _hideActiveRoleLabel();
+    }
     renderChatMessages();
     updateCtxIndicator();
     document.getElementById('chat-hist-panel').classList.remove('open');
@@ -954,7 +967,14 @@ async function sendChat() {
   _setChatBusy(true);
 
   if (!state.incognito) {
+    const isNewChat = !state.chatId;
     await _histEnsureChat(text);
+    // Persist the role as a hidden system message #0 — makes it survive
+    // reloading this chat later (previously it only lived in state.rolePrompt,
+    // in-memory, and silently vanished once you reopened the chat from history).
+    if (isNewChat && state.rolePrompt) {
+      await _histSaveMsg('system', state.rolePrompt);
+    }
     const saveUpTo = state.chatMessages.length - 1;
     for (let i = state.savedCount; i < saveUpTo; i++) {
       await _histSaveMsg(state.chatMessages[i].role, state.chatMessages[i].content);

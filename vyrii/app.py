@@ -1105,10 +1105,22 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     cid = _parse_id(choice)
                     if cid is None:
                         return [], None, CTX_START, "", gr.update(visible=True), gr.update(visible=False)
-                    msgs = _hist.get_messages(cid)
+                    all_msgs = _hist.get_messages(cid)
+                    # The role (if any) was saved as a hidden system message #0 — keep
+                    # it out of the rendered chatbot, but restore it into
+                    # role_prompt_state so continuing this chat still uses it.
+                    role_prompt = next((m["content"] for m in all_msgs if m["role"] == "system"), "")
+                    msgs = [m for m in all_msgs if m["role"] != "system"]
                     ctx = smart_ctx(msgs)
-                    # loading an existing chat is never a "pick a role" moment
-                    return msgs, cid, ctx, "", gr.update(visible=False), gr.update(visible=False)
+                    role_lbl = gr.update(visible=False)
+                    if role_prompt:
+                        match = next((r for r in _roles.list_roles() if r.get("prompt") == role_prompt), None)
+                        if match:
+                            label = t.get("role_active_label", "🎭 Role: {name}").format(name=match["name"])
+                            role_lbl = gr.update(value=label, visible=True)
+                    # loading an existing chat is never a "pick a role" moment — hide
+                    # the picker regardless of whether a role was restored above.
+                    return msgs, cid, ctx, role_prompt, gr.update(visible=False), role_lbl
 
                 def _delete_chat(choice):
                     cid = _parse_id(choice)
@@ -1220,8 +1232,15 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                         )
 
                     if not incognito:
+                        is_new_chat = cid is None
                         if cid is None:
                             cid = _hist.create_chat(_hist.auto_title(user_msg))
+                        # Persist the role as a hidden system message #0 — makes it
+                        # survive reloading this chat later (previously it only lived
+                        # in role_prompt_state, in-memory, and silently vanished once
+                        # you reopened the chat from history).
+                        if is_new_chat and (role_prompt or "").strip():
+                            _hist.add_message(cid, "system", role_prompt)
                         _hist.add_message(cid, "user", user_msg)
 
                     host_label = use_url.replace("http://", "").replace("https://", "")
