@@ -636,6 +636,11 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
     from .engine import list_models, stream_chat, smart_ctx, complete, CTX_START, parse_model_spec
     from . import history as _hist
     from . import stats as _stats
+    from . import roles as _roles
+    _roles.init(VYRII_HOME)
+
+    def _role_choices_top(items):
+        return [r["name"] for r in items]
 
     _cfg_now        = _load_config()
     _theme_name     = _cfg_now.get("theme", "Monochrome")
@@ -881,6 +886,21 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     with gr.Column(scale=1, min_width=220):
                         gr.Markdown(t["conversations_header"])
                         new_btn  = gr.Button(t["new_chat_btn"], variant="primary", size="sm")
+
+                        # Role picker — visible only before the first message of a new
+                        # chat (see roles.py); disappears once a role is applied or the
+                        # first message is sent, same lifecycle as the static-JS drawer.
+                        with gr.Row(visible=True) as role_picker_row:
+                            role_dd = gr.Dropdown(
+                                choices=_role_choices_top(_roles.list_roles()),
+                                label=t.get("role_select_label", "Role"),
+                                show_label=False, container=False, scale=3,
+                            )
+                            role_apply_btn = gr.Button(t.get("role_apply_btn", "Use"),
+                                                       size="sm", scale=1)
+
+                        role_active_lbl = gr.Markdown("", visible=False)
+
                         export_btn = gr.DownloadButton(
                             t["export_chat_btn"], size="sm",
                         )
@@ -954,6 +974,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                 # current-context-window state — it's both user-editable and the
                 # live display, read directly as an input wherever s_ctx used to be.
                 s_cid = gr.State(None)      # current chat_id or None
+                role_prompt_state = gr.State("")   # selected role's system prompt, "" if none
 
                 # ── handlers ──────────────────────────────────────────────────
 
@@ -1074,15 +1095,20 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                         None,        # s_cid
                         CTX_START,   # ctx_lbl
                         gr.Dropdown(choices=_chat_choices(_hist.list_chats()), value=None),
+                        "",          # role_prompt_state — reset
+                        gr.update(visible=True),   # role_picker_row — show again
+                        gr.Dropdown(choices=_role_choices_top(_roles.list_roles()), value=None),
+                        gr.update(visible=False),  # role_active_lbl — hide
                     )
 
                 def _load_chat(choice):
                     cid = _parse_id(choice)
                     if cid is None:
-                        return [], None, CTX_START
+                        return [], None, CTX_START, "", gr.update(visible=True), gr.update(visible=False)
                     msgs = _hist.get_messages(cid)
                     ctx = smart_ctx(msgs)
-                    return msgs, cid, ctx
+                    # loading an existing chat is never a "pick a role" moment
+                    return msgs, cid, ctx, "", gr.update(visible=False), gr.update(visible=False)
 
                 def _delete_chat(choice):
                     cid = _parse_id(choice)
@@ -1143,7 +1169,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     _stop_gen.set()
 
                 def _send(user_msg, messages, cid, ctx, ctx_mode, hidden_ctx, model, url,
-                          backend_label, show_thinking, timeout, incognito):
+                          backend_label, show_thinking, timeout, incognito, role_prompt):
                     _stop_gen.clear()
                     ctx = int(ctx) if ctx else CTX_START
                     user_msg = user_msg.strip()
@@ -1177,6 +1203,10 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
 
                     rag_display = ""
                     send_msgs = base_msgs + [{"role": "user", "content": user_msg}]
+                    if (role_prompt or "").strip():
+                        # Prepended before autocut runs, same as hidden_ctx above, so the
+                        # role's `first`-budget reservation actually applies to it.
+                        send_msgs = [{"role": "system", "content": role_prompt}] + send_msgs
 
                     _cfg_autocut = _load_config()
                     if _cfg_autocut.get("autocut_enabled"):
@@ -1272,12 +1302,18 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                 _send_out = [chatbot, s_cid, ctx_lbl, msg_in]
                 _send_in  = [msg_in, chatbot, s_cid, ctx_lbl, ctx_mode, s_hidden_ctx,
                               g_model, g_url, g_backend,
-                              g_thinking, s_timeout, g_incognito]
+                              g_thinking, s_timeout, g_incognito, role_prompt_state]
+
+                # Once a message goes out, the "pick a role" moment has passed for this
+                # chat — hide the picker regardless of whether a role was applied.
+                _hide_role_picker = lambda: gr.update(visible=False)
 
                 send_btn.click(_send, inputs=_send_in, outputs=_send_out).then(
-                    _refresh_hist, outputs=[hist_dd])
+                    _refresh_hist, outputs=[hist_dd]).then(
+                    _hide_role_picker, outputs=[role_picker_row])
                 msg_in.submit(_send,  inputs=_send_in, outputs=_send_out).then(
-                    _refresh_hist, outputs=[hist_dd])
+                    _refresh_hist, outputs=[hist_dd]).then(
+                    _hide_role_picker, outputs=[role_picker_row])
                 stop_btn.click(_do_stop, outputs=[])
 
                 def _retry_pop(messages, cid):
@@ -1311,15 +1347,29 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
 
                 new_btn.click(
                     _new_chat,
-                    outputs=[chatbot, s_cid, ctx_lbl, hist_dd],
+                    outputs=[chatbot, s_cid, ctx_lbl, hist_dd,
+                             role_prompt_state, role_picker_row, role_dd, role_active_lbl],
                 )
                 refr_btn.click(_refresh_hist, outputs=[hist_dd])
                 load_btn.click(
                     _load_chat,
                     inputs=[hist_dd],
-                    outputs=[chatbot, s_cid, ctx_lbl],
+                    outputs=[chatbot, s_cid, ctx_lbl, role_prompt_state, role_picker_row, role_active_lbl],
                 )
                 del_btn.click(_delete_chat, inputs=[hist_dd], outputs=[hist_dd])
+
+                def _apply_role(name):
+                    r = _roles.get_role(name) if name else None
+                    prompt = r.get("prompt", "") if r else ""
+                    if not r:
+                        return prompt, gr.update(visible=False), gr.update(visible=False)
+                    label = t.get("role_active_label", "🎭 Role: {name}").format(name=r.get("name", name))
+                    return prompt, gr.update(visible=False), gr.update(value=label, visible=True)
+
+                role_apply_btn.click(
+                    _apply_role, inputs=[role_dd],
+                    outputs=[role_prompt_state, role_picker_row, role_active_lbl],
+                )
 
                 def _search_hist(query):
                     results = _hist.search_chats(query)
@@ -3383,7 +3433,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
             # ══════════════════════════════════════════════════════════════════
             # Glossary — /flow glossary ported into vyrii/flows/glossary.py
             # ══════════════════════════════════════════════════════════════════
-            with gr.Tab("Glossary"):
+            with gr.Tab(t.get("glossary_tab", "Glossary")):
                 gr.Markdown("### Index a folder")
                 with gr.Row():
                     gl_index_path    = gr.Textbox(label="Folder (relative to ~/.vyrii)", scale=3)
@@ -3557,6 +3607,310 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     lambda p: p or "",
                     inputs=[fi_sel_state], outputs=[gl_index_path],
                     js=_JS_SWITCH_TO_GLOSSARY,
+                )
+
+            # Prompts
+            # ══════════════════════════════════════════════════════════════════
+            with gr.Tab(t["prompts_tab"]):
+                import json as _prm_json
+                import uuid as _prm_uuid
+
+                _PRM_PATH = VYRII_HOME / "prompts.json"
+
+                def _prm_load_all():
+                    if not _PRM_PATH.exists():
+                        return []
+                    try:
+                        return _prm_json.loads(_PRM_PATH.read_text(encoding="utf-8"))
+                    except Exception:
+                        return []
+
+                def _prm_save_all(items):
+                    _PRM_PATH.write_text(
+                        _prm_json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8"
+                    )
+
+                def _prm_as_md(items, q=""):
+                    q = q.lower()
+                    hits = [p for p in items if not q or any(
+                        q in (p.get(k) or "").lower()
+                        for k in ("name","description","model","area","prompt")
+                    )] if q else items
+                    if not hits:
+                        return t["prm_none"]
+                    lines = [t["prm_list_header"]]
+                    for p in hits:
+                        badges = ""
+                        if p.get("model"): badges += f" `{p['model']}`"
+                        if p.get("area"):  badges += f" _{p['area']}_"
+                        lines.append(f"\n**{p['name']}**{badges}")
+                        if p.get("description"):
+                            lines.append(f"_{p['description']}_")
+                        lines.append(f"```\n{p['prompt']}\n```")
+                    return "\n".join(lines)
+
+                def _prm_choices(items):
+                    return [f"{p['name']} [{p.get('model') or '—'}]" for p in items]
+
+                def _prm_refresh(q):
+                    items = _prm_load_all()
+                    choices = _prm_choices(items)
+                    return (
+                        _prm_as_md(items, q),
+                        gr.update(choices=choices, value=choices[0] if choices else None),
+                        items,
+                    )
+
+                def _prm_select_text(sel, items):
+                    if not sel or not items:
+                        return ""
+                    name = sel.split(" [")[0]
+                    for p in items:
+                        if p["name"] == name:
+                            return p["prompt"]
+                    return ""
+
+                def _prm_save(name, desc, model, area, prompt_text, q):
+                    if not name.strip() or not prompt_text.strip():
+                        return gr.update(), gr.update(), gr.update(), t["prm_err_required"]
+                    items = _prm_load_all()
+                    pid = next((p["id"] for p in items if p["name"] == name.strip()), None) \
+                          or _prm_uuid.uuid4().hex[:12]
+                    items = [p for p in items if p["name"] != name.strip()]
+                    items.append({
+                        "id": pid, "name": name.strip(), "prompt": prompt_text,
+                        "description": desc.strip(), "model": model.strip(), "area": area.strip(),
+                    })
+                    _prm_save_all(items)
+                    choices = _prm_choices(items)
+                    return (
+                        _prm_as_md(items, q),
+                        gr.update(choices=choices, value=choices[0] if choices else None),
+                        items,
+                        t["prm_saved"].format(name=name.strip()),
+                    )
+
+                def _prm_delete(sel, items, q):
+                    if not sel:
+                        return gr.update(), gr.update(), items, ""
+                    name = sel.split(" [")[0]
+                    new_items = [p for p in items if p["name"] != name]
+                    _prm_save_all(new_items)
+                    choices = _prm_choices(new_items)
+                    return (
+                        _prm_as_md(new_items, q),
+                        gr.update(choices=choices, value=choices[0] if choices else None),
+                        new_items,
+                        t["prm_deleted"].format(name=name),
+                    )
+
+                gr.Markdown(t["prompts_desc"])
+
+                _prm_init = _prm_load_all()
+                prm_state = gr.State(_prm_init)
+
+                with gr.Row():
+                    prm_filter = gr.Textbox(
+                        label=t["prm_filter_label"], placeholder="name / model / area…",
+                        scale=4,
+                    )
+                    prm_refresh_btn = gr.Button(t["prm_refresh_btn"], scale=1)
+
+                prm_list_md = gr.Markdown(_prm_as_md(_prm_init))
+
+                with gr.Row():
+                    prm_sel_dd = gr.Dropdown(
+                        choices=_prm_choices(_prm_init),
+                        value=_prm_choices(_prm_init)[0] if _prm_choices(_prm_init) else None,
+                        label=t["prm_select_label"],
+                        scale=4,
+                        allow_custom_value=False,
+                    )
+                    prm_add_to_chat_btn = gr.Button(t["add_to_chat_btn"], scale=1)
+                    prm_copy_btn        = gr.Button(t["copy_btn"],         scale=1)
+                    prm_del_btn         = gr.Button(t["prm_delete_btn"],   scale=1, variant="stop")
+
+                prm_text_hidden = gr.Textbox(visible=False, label="prm_text")
+                prm_status      = gr.Markdown("")
+                prm_filter_q    = gr.State("")
+
+                with gr.Accordion(t["prm_add_section"], open=False):
+                    prm_name   = gr.Textbox(label=t["prm_name_label"], placeholder="code-review-ruby")
+                    prm_desc   = gr.Textbox(label=t["prm_desc_label_g"], placeholder="")
+                    with gr.Row():
+                        prm_model = gr.Textbox(label=t["prm_model_label_g"], placeholder="qwen2.5-coder", scale=1)
+                        prm_area  = gr.Textbox(label=t["prm_area_label_g"],  placeholder="code / research / …", scale=1)
+                    prm_prompt_txt = gr.Textbox(
+                        label=t["prm_prompt_label_g"], lines=6, placeholder="You are…"
+                    )
+                    prm_save_btn = gr.Button(t["prm_save_btn"], variant="primary")
+
+                # ── wire up ──
+                prm_refresh_btn.click(
+                    _prm_refresh,
+                    inputs=[prm_filter],
+                    outputs=[prm_list_md, prm_sel_dd, prm_state],
+                )
+                prm_filter.submit(
+                    _prm_refresh,
+                    inputs=[prm_filter],
+                    outputs=[prm_list_md, prm_sel_dd, prm_state],
+                )
+                prm_sel_dd.change(
+                    _prm_select_text,
+                    inputs=[prm_sel_dd, prm_state],
+                    outputs=[prm_text_hidden],
+                )
+                prm_add_to_chat_btn.click(
+                    lambda text: (text, gr.update(visible=True)),
+                    inputs=[prm_text_hidden],
+                    outputs=[ctx_buffer, add_ctx_panel],
+                    js=_JS_SCROLL_TO_PANEL,
+                )
+                prm_copy_btn.click(
+                    None, inputs=[prm_text_hidden], outputs=[],
+                    js="async (text) => { await navigator.clipboard.writeText(text || ''); }",
+                )
+                prm_del_btn.click(
+                    _prm_delete,
+                    inputs=[prm_sel_dd, prm_state, prm_filter],
+                    outputs=[prm_list_md, prm_sel_dd, prm_state, prm_status],
+                )
+                prm_save_btn.click(
+                    _prm_save,
+                    inputs=[prm_name, prm_desc, prm_model, prm_area, prm_prompt_txt, prm_filter],
+                    outputs=[prm_list_md, prm_sel_dd, prm_state, prm_status],
+                )
+
+            # ══════════════════════════════════════════════════════════════════
+            # Role — named system prompts chosen once at the start of a new chat.
+            # Distinct from Prompts (above): a Role is picked via the Chat tab's
+            # role picker before the first message, becomes an invisible system
+            # message for the rest of that chat, and is protected by autocut's
+            # `first` budget — Prompts are manually inserted snippets instead.
+            # ══════════════════════════════════════════════════════════════════
+            with gr.Tab(t.get("role_tab", "Role")):
+                _role_choices = _role_choices_top
+
+                def _role_refresh():
+                    items = _roles.list_roles()
+                    choices = _role_choices(items)
+                    return gr.update(choices=choices, value=choices[0] if choices else None), items
+
+                def _role_est_tokens(text):
+                    return (len(text or "") + 3) // 4   # same chars/4 heuristic as ctxwindow.py
+
+                def _role_tok_label(cur, cap_tokens):
+                    if cap_tokens > 0:
+                        return t.get("role_tok_count_cap", "~{n} / {cap} tokens").format(n=cur, cap=cap_tokens)
+                    return t.get("role_tok_count", "~{n} tokens").format(n=cur)
+
+                def _role_select(sel, items):
+                    if not sel or not items:
+                        return "", 0, _role_tok_label(0, 0)
+                    for r in items:
+                        if r["name"] == sel:
+                            prompt = r.get("prompt", "")
+                            return prompt, int(r.get("size", 0)), _role_tok_label(_role_est_tokens(prompt), 0)
+                    return "", 0, _role_tok_label(0, 0)
+
+                def _role_update_size_label(prompt_text, size):
+                    # Reserved size doubles as a live authoring cap: gr.Textbox has no
+                    # native maxlength, so truncate server-side on every change instead
+                    # (same effect as the static JS UI's textarea.maxLength = size*4).
+                    cap_tokens = int(size or 0)
+                    if cap_tokens > 0:
+                        cap_chars = cap_tokens * 4
+                        if len(prompt_text or "") > cap_chars:
+                            prompt_text = prompt_text[:cap_chars]
+                    cur = _role_est_tokens(prompt_text)
+                    return prompt_text, _role_tok_label(cur, cap_tokens)
+
+                def _role_save(name, prompt_text, size):
+                    if not name.strip() or not prompt_text.strip():
+                        return gr.update(), gr.update(), t.get("role_err_required", "Name and prompt are required")
+                    _roles.save_role(name.strip(), prompt_text, int(size or 0))
+                    items = _roles.list_roles()
+                    choices = _role_choices(items)
+                    msg = t.get("role_saved", "Saved role '{name}'").format(name=name.strip())
+
+                    # Autocut only protects the first `autocut_first` tokens from the start
+                    # of the message list — a role bigger than that budget isn't guaranteed
+                    # to survive being cut, even though it's always message #0. `size` is
+                    # just the user's own declared estimate (not enforced elsewhere), so
+                    # check the real prompt length too.
+                    cfg = _load_config()
+                    first = int(cfg.get("autocut_first") or 0)
+                    actual = _role_est_tokens(prompt_text)
+                    if cfg.get("autocut_enabled") and first > 0 and max(int(size or 0), actual) > first:
+                        msg += "  \n" + t.get(
+                            "role_warn_cut",
+                            "⚠️ This role is ~{actual} tokens but autocut's 'first' budget is "
+                            "only {first} — it may get cut mid-chat. Raise autocut_first in "
+                            "Settings or shorten the role."
+                        ).format(actual=actual, first=first)
+
+                    return gr.update(choices=choices, value=name.strip()), items, msg
+
+                def _role_delete(sel, items):
+                    if not sel:
+                        return gr.update(), items, ""
+                    _roles.delete_role(sel)
+                    new_items = _roles.list_roles()
+                    choices = _role_choices(new_items)
+                    return (gr.update(choices=choices, value=choices[0] if choices else None),
+                            new_items, t.get("role_deleted", "Deleted role '{name}'").format(name=sel))
+
+                gr.Markdown(t.get(
+                    "role_tab_desc",
+                    "Roles are chosen once at the start of a new chat (via the picker on the "
+                    "Chat tab) and stay as an invisible system message for the rest of it — "
+                    "unlike Prompts, which are inserted manually at any point."
+                ))
+
+                _role_init = _roles.list_roles()
+                role_state = gr.State(_role_init)
+
+                with gr.Row():
+                    role_sel_dd = gr.Dropdown(
+                        choices=_role_choices(_role_init),
+                        value=_role_choices(_role_init)[0] if _role_init else None,
+                        label=t.get("role_select_label", "Role"), scale=3,
+                    )
+                    role_refresh_btn = gr.Button(t.get("refresh_list_btn", "Refresh"), scale=1)
+                    role_del_btn = gr.Button(t.get("prm_delete_btn", "Delete"), scale=1, variant="stop")
+
+                role_name_in = gr.Textbox(label=t.get("role_name_label", "Name"),
+                                          placeholder="english-teacher")
+                role_prompt_in = gr.Textbox(label=t.get("role_prompt_label", "System prompt"),
+                                            lines=6, placeholder="You are…")
+                role_prompt_size_lbl = gr.Markdown(t.get("role_tok_count", "~{n} tokens").format(n=0))
+                role_size_in = gr.Number(
+                    label=t.get("role_size_label", "Reserved size (tokens, for autocut)"),
+                    value=0, precision=0, minimum=0,
+                    info=t.get("role_size_info",
+                               "Caps how much you can type below, and warns on save if it "
+                               "exceeds the chat's current autocut 'first' budget."),
+                )
+                role_save_btn = gr.Button(t.get("role_save_btn", "Save role"), variant="primary")
+                role_status = gr.Markdown("")
+
+                role_sel_dd.change(_role_select, inputs=[role_sel_dd, role_state],
+                                   outputs=[role_prompt_in, role_size_in, role_prompt_size_lbl])
+                role_prompt_in.change(_role_update_size_label,
+                                      inputs=[role_prompt_in, role_size_in],
+                                      outputs=[role_prompt_in, role_prompt_size_lbl])
+                role_size_in.change(_role_update_size_label,
+                                    inputs=[role_prompt_in, role_size_in],
+                                    outputs=[role_prompt_in, role_prompt_size_lbl])
+                role_refresh_btn.click(_role_refresh, outputs=[role_sel_dd, role_state])
+                role_save_btn.click(
+                    _role_save, inputs=[role_name_in, role_prompt_in, role_size_in],
+                    outputs=[role_sel_dd, role_state, role_status],
+                )
+                role_del_btn.click(
+                    _role_delete, inputs=[role_sel_dd, role_state],
+                    outputs=[role_sel_dd, role_state, role_status],
                 )
 
             # ══════════════════════════════════════════════════════════════════
@@ -4005,7 +4359,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                 et_df = gr.Dataframe(
                     value=[[e["name"], e["port"]] for e in _et_df_tools],
                     headers=["Name", "Port"],
-                    col_count=(2, "fixed"),
+                    column_count=2,
                     datatype=["str", "number"],
                     row_count=(max(len(_et_df_tools), 1), "dynamic"),
                     label=t.get("et_df_label", "Tools list (clear Name to delete a row)"),
@@ -4391,179 +4745,6 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                 )
                 ct_cancel_btn.click(_ctxtimer_cancel, inputs=[], outputs=[ct_status])
                 ct_clear_btn.click(_ctxtimer_clear, inputs=[], outputs=[ct_report_df, ct_status])
-
-            # Prompts
-            # ══════════════════════════════════════════════════════════════════
-            with gr.Tab(t["prompts_tab"]):
-                import json as _prm_json
-                import uuid as _prm_uuid
-
-                _PRM_PATH = VYRII_HOME / "prompts.json"
-
-                def _prm_load_all():
-                    if not _PRM_PATH.exists():
-                        return []
-                    try:
-                        return _prm_json.loads(_PRM_PATH.read_text(encoding="utf-8"))
-                    except Exception:
-                        return []
-
-                def _prm_save_all(items):
-                    _PRM_PATH.write_text(
-                        _prm_json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8"
-                    )
-
-                def _prm_as_md(items, q=""):
-                    q = q.lower()
-                    hits = [p for p in items if not q or any(
-                        q in (p.get(k) or "").lower()
-                        for k in ("name","description","model","area","prompt")
-                    )] if q else items
-                    if not hits:
-                        return t["prm_none"]
-                    lines = [t["prm_list_header"]]
-                    for p in hits:
-                        badges = ""
-                        if p.get("model"): badges += f" `{p['model']}`"
-                        if p.get("area"):  badges += f" _{p['area']}_"
-                        lines.append(f"\n**{p['name']}**{badges}")
-                        if p.get("description"):
-                            lines.append(f"_{p['description']}_")
-                        lines.append(f"```\n{p['prompt']}\n```")
-                    return "\n".join(lines)
-
-                def _prm_choices(items):
-                    return [f"{p['name']} [{p.get('model') or '—'}]" for p in items]
-
-                def _prm_refresh(q):
-                    items = _prm_load_all()
-                    choices = _prm_choices(items)
-                    return (
-                        _prm_as_md(items, q),
-                        gr.update(choices=choices, value=choices[0] if choices else None),
-                        items,
-                    )
-
-                def _prm_select_text(sel, items):
-                    if not sel or not items:
-                        return ""
-                    name = sel.split(" [")[0]
-                    for p in items:
-                        if p["name"] == name:
-                            return p["prompt"]
-                    return ""
-
-                def _prm_save(name, desc, model, area, prompt_text, q):
-                    if not name.strip() or not prompt_text.strip():
-                        return gr.update(), gr.update(), gr.update(), t["prm_err_required"]
-                    items = _prm_load_all()
-                    pid = next((p["id"] for p in items if p["name"] == name.strip()), None) \
-                          or _prm_uuid.uuid4().hex[:12]
-                    items = [p for p in items if p["name"] != name.strip()]
-                    items.append({
-                        "id": pid, "name": name.strip(), "prompt": prompt_text,
-                        "description": desc.strip(), "model": model.strip(), "area": area.strip(),
-                    })
-                    _prm_save_all(items)
-                    choices = _prm_choices(items)
-                    return (
-                        _prm_as_md(items, q),
-                        gr.update(choices=choices, value=choices[0] if choices else None),
-                        items,
-                        t["prm_saved"].format(name=name.strip()),
-                    )
-
-                def _prm_delete(sel, items, q):
-                    if not sel:
-                        return gr.update(), gr.update(), items, ""
-                    name = sel.split(" [")[0]
-                    new_items = [p for p in items if p["name"] != name]
-                    _prm_save_all(new_items)
-                    choices = _prm_choices(new_items)
-                    return (
-                        _prm_as_md(new_items, q),
-                        gr.update(choices=choices, value=choices[0] if choices else None),
-                        new_items,
-                        t["prm_deleted"].format(name=name),
-                    )
-
-                gr.Markdown(t["prompts_desc"])
-
-                _prm_init = _prm_load_all()
-                prm_state = gr.State(_prm_init)
-
-                with gr.Row():
-                    prm_filter = gr.Textbox(
-                        label=t["prm_filter_label"], placeholder="name / model / area…",
-                        scale=4,
-                    )
-                    prm_refresh_btn = gr.Button(t["prm_refresh_btn"], scale=1)
-
-                prm_list_md = gr.Markdown(_prm_as_md(_prm_init))
-
-                with gr.Row():
-                    prm_sel_dd = gr.Dropdown(
-                        choices=_prm_choices(_prm_init),
-                        value=_prm_choices(_prm_init)[0] if _prm_choices(_prm_init) else None,
-                        label=t["prm_select_label"],
-                        scale=4,
-                        allow_custom_value=False,
-                    )
-                    prm_add_to_chat_btn = gr.Button(t["add_to_chat_btn"], scale=1)
-                    prm_copy_btn        = gr.Button(t["copy_btn"],         scale=1)
-                    prm_del_btn         = gr.Button(t["prm_delete_btn"],   scale=1, variant="stop")
-
-                prm_text_hidden = gr.Textbox(visible=False, label="prm_text")
-                prm_status      = gr.Markdown("")
-                prm_filter_q    = gr.State("")
-
-                with gr.Accordion(t["prm_add_section"], open=False):
-                    prm_name   = gr.Textbox(label=t["prm_name_label"], placeholder="code-review-ruby")
-                    prm_desc   = gr.Textbox(label=t["prm_desc_label_g"], placeholder="")
-                    with gr.Row():
-                        prm_model = gr.Textbox(label=t["prm_model_label_g"], placeholder="qwen2.5-coder", scale=1)
-                        prm_area  = gr.Textbox(label=t["prm_area_label_g"],  placeholder="code / research / …", scale=1)
-                    prm_prompt_txt = gr.Textbox(
-                        label=t["prm_prompt_label_g"], lines=6, placeholder="You are…"
-                    )
-                    prm_save_btn = gr.Button(t["prm_save_btn"], variant="primary")
-
-                # ── wire up ──
-                prm_refresh_btn.click(
-                    _prm_refresh,
-                    inputs=[prm_filter],
-                    outputs=[prm_list_md, prm_sel_dd, prm_state],
-                )
-                prm_filter.submit(
-                    _prm_refresh,
-                    inputs=[prm_filter],
-                    outputs=[prm_list_md, prm_sel_dd, prm_state],
-                )
-                prm_sel_dd.change(
-                    _prm_select_text,
-                    inputs=[prm_sel_dd, prm_state],
-                    outputs=[prm_text_hidden],
-                )
-                prm_add_to_chat_btn.click(
-                    lambda text: (text, gr.update(visible=True)),
-                    inputs=[prm_text_hidden],
-                    outputs=[ctx_buffer, add_ctx_panel],
-                    js=_JS_SCROLL_TO_PANEL,
-                )
-                prm_copy_btn.click(
-                    None, inputs=[prm_text_hidden], outputs=[],
-                    js="async (text) => { await navigator.clipboard.writeText(text || ''); }",
-                )
-                prm_del_btn.click(
-                    _prm_delete,
-                    inputs=[prm_sel_dd, prm_state, prm_filter],
-                    outputs=[prm_list_md, prm_sel_dd, prm_state, prm_status],
-                )
-                prm_save_btn.click(
-                    _prm_save,
-                    inputs=[prm_name, prm_desc, prm_model, prm_area, prm_prompt_txt, prm_filter],
-                    outputs=[prm_list_md, prm_sel_dd, prm_state, prm_status],
-                )
 
         # ── "Add to chat" panel handlers (registered after all components) ──
         atc_cancel.click(lambda: gr.update(visible=False), outputs=[add_ctx_panel])

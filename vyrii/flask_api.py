@@ -1193,6 +1193,39 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
             return jsonify({"error": f"no such term: {_gl._kebab(term)}"}), 404
         return jsonify(_gl._read_term_file(project, term))
 
+    # ── /vyrii/roles/* ────────────────────────────────────────────────────────
+    # Separate entity from /vyrii/prompts — a Role is chosen once at the start
+    # of a new chat and becomes an invisible system message for the rest of
+    # it (see vyrii/roles.py); Prompts are manually inserted snippets.
+
+    from . import roles as _roles
+    _roles.init(_VYRII_HOME)
+
+    @app.route("/vyrii/roles", methods=["GET"])
+    def roles_list():
+        return jsonify({"roles": _roles.list_roles()})
+
+    @app.route("/vyrii/roles/<name>", methods=["GET"])
+    def roles_get(name):
+        r = _roles.get_role(name)
+        if r is None:
+            return jsonify({"error": f"Role '{name}' not found"}), 404
+        return jsonify(r)
+
+    @app.route("/vyrii/roles", methods=["POST"])
+    def roles_save():
+        body = request.get_json(silent=True) or {}
+        name = body.get("name", "")
+        if not name.strip():
+            return jsonify({"error": "name is required"}), 400
+        _roles.save_role(name, body.get("prompt", ""), body.get("size", 0))
+        return jsonify({"ok": True})
+
+    @app.route("/vyrii/roles/<name>", methods=["DELETE"])
+    def roles_delete(name):
+        _roles.delete_role(name)
+        return jsonify({"ok": True})
+
     # ── /vyrii/team/* ─────────────────────────────────────────────────────────
 
     from . import parallel as _par

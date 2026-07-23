@@ -253,6 +253,11 @@ class PromptItem(BaseModel):
     model:       str = ""
     area:        str = ""
 
+class RoleRequest(BaseModel):
+    name:   str
+    prompt: str
+    size:   int = 0
+
 
 def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
                auth: bool = False) -> FastAPI:
@@ -1306,6 +1311,36 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail=f"no such term: {_gl._kebab(term)}")
         return _gl._read_term_file(project, term)
+
+    # ── /vyrii/roles/* ───────────────────────────────────────────────────────
+    # Separate entity from /vyrii/prompts — a Role is chosen once at the start
+    # of a new chat and becomes an invisible system message for the rest of
+    # it (see vyrii/roles.py); Prompts are manually inserted snippets.
+
+    from . import roles as _roles
+    _roles.init(_VYRII_HOME)
+
+    @app.get("/vyrii/roles")
+    def roles_list():
+        return {"roles": _roles.list_roles()}
+
+    @app.get("/vyrii/roles/{name}")
+    def roles_get(name: str):
+        r = _roles.get_role(name)
+        if r is None:
+            from fastapi import HTTPException
+            raise HTTPException(404, f"Role '{name}' not found")
+        return r
+
+    @app.post("/vyrii/roles")
+    def roles_save(req: RoleRequest):
+        _roles.save_role(req.name, req.prompt, req.size)
+        return {"ok": True}
+
+    @app.delete("/vyrii/roles/{name}")
+    def roles_delete(name: str):
+        _roles.delete_role(name)
+        return {"ok": True}
 
     # ── /vyrii/team/* ────────────────────────────────────────────────────────
 

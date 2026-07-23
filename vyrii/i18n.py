@@ -429,6 +429,7 @@ STRINGS: dict[str, dict] = {
         "worker_error":            "[error] **{model}** @ {host} — {e}",
         "team_done":               "\n\n**Done.**",
         "provide_name_command_profile": "Provide a name and command.",
+        "glossary_tab": "Glossary",
         # Prompts tab
         "prompts_tab":      "Prompts",
         "prompts_desc":     "Prompt library — save prompts, search by name, model or area, copy or send to chat.",
@@ -442,6 +443,23 @@ STRINGS: dict[str, dict] = {
         "prm_prompt_label_g": "Prompt text", "prm_save_btn": "Save",
         "prm_saved":        "Saved: {name}", "prm_deleted": "Deleted: {name}",
         "prm_err_required": "Name and prompt text are required.",
+
+        "role_select_label": "Role", "role_apply_btn": "Use", "role_tab": "Role",
+        "role_err_required": "Name and prompt are required",
+        "role_saved": "Saved role '{name}'", "role_deleted": "Deleted role '{name}'",
+        "role_name_label": "Name", "role_prompt_label": "System prompt",
+        "role_size_label": "Reserved size (tokens, for autocut)",
+        "role_size_info": "Caps how much you can type below, and warns on save if it "
+                          "exceeds the chat's current autocut 'first' budget.",
+        "role_save_btn": "Save role",
+        "role_tab_desc": "Roles are chosen once at the start of a new chat (via the picker "
+                         "on the Chat tab) and stay as an invisible system message for the "
+                         "rest of it — unlike Prompts, which are inserted manually at any point.",
+        "role_warn_cut": "⚠️ This role is ~{actual} tokens but autocut's 'first' budget is "
+                        "only {first} — it may get cut mid-chat. Raise autocut_first in "
+                        "Settings or shorten the role.",
+        "role_tok_count": "~{n} tokens", "role_tok_count_cap": "~{n} / {cap} tokens",
+        "role_active_label": "🎭 Role: {name}",
     },
 
     # ── Ukrainian ─────────────────────────────────────────────────────────────
@@ -863,6 +881,7 @@ STRINGS: dict[str, dict] = {
         "worker_error":            "[помилка] **{model}** @ {host} — {e}",
         "team_done":               "\n\n**Готово.**",
         "provide_name_command_profile": "Вкажіть назву і команду.",
+        "glossary_tab": "Глосарій",
         # Prompts tab
         "prompts_tab":      "Промпти",
         "prompts_desc":     "Бібліотека промптів — збережи і знайди за назвою, моделлю або темою.",
@@ -876,6 +895,24 @@ STRINGS: dict[str, dict] = {
         "prm_prompt_label_g": "Текст промпту", "prm_save_btn": "Зберегти",
         "prm_saved":        "Збережено: {name}", "prm_deleted": "Видалено: {name}",
         "prm_err_required": "Назва і текст промпту є обов'язковими.",
+
+        "role_select_label": "Роль", "role_apply_btn": "Обрати", "role_tab": "Роль",
+        "role_err_required": "Потрібні назва і текст промпту",
+        "role_saved": "Роль збережено: '{name}'", "role_deleted": "Роль видалено: '{name}'",
+        "role_name_label": "Назва", "role_prompt_label": "Системний промпт",
+        "role_size_label": "Зарезервований розмір (токени, для autocut)",
+        "role_size_info": "Обмежує, скільки можна ввести нижче, і попереджає при "
+                          "збереженні, якщо перевищує поточний бюджет 'first' автокату.",
+        "role_save_btn": "Зберегти роль",
+        "role_tab_desc": "Ролі обираються один раз на старті нового чату (через вибір "
+                         "у вкладці Chat) і лишаються невидимим системним повідомленням "
+                         "до кінця чату — на відміну від Промптів, які вставляються "
+                         "вручну в будь-який момент.",
+        "role_warn_cut": "⚠️ Ця роль займає ~{actual} токенів, а бюджет autocut 'first' "
+                        "— лише {first} — її може вирізати посеред чату. Збільшіть "
+                        "autocut_first у Налаштуваннях або скоротіть роль.",
+        "role_tok_count": "~{n} токенів", "role_tok_count_cap": "~{n} / {cap} токенів",
+        "role_active_label": "🎭 Роль: {name}",
     },
 
     # ── German ───────────────────────────────────────────────────────────────
@@ -1160,6 +1197,7 @@ STRINGS: dict[str, dict] = {
         "worker_error": "[Fehler] **{model}** @ {host} — {e}",
         "team_done": "\n\n**Fertig.**",
         "provide_name_command_profile": "Bitte Name und Befehl angeben.",
+        "glossary_tab": "Glossar",
         "prompts_tab": "Prompts", "prompts_desc": "Prompt-Bibliothek — speichern, nach Name/Modell/Bereich suchen.",
         "prm_filter_label": "Filter", "prm_refresh_btn": "Aktualisieren",
         "prm_list_header": "### Gespeicherte Prompts", "prm_none": "Noch keine Prompts.",
@@ -1170,6 +1208,26 @@ STRINGS: dict[str, dict] = {
         "prm_prompt_label_g": "Prompt-Text", "prm_save_btn": "Speichern",
         "prm_saved": "Gespeichert: {name}", "prm_deleted": "Gelöscht: {name}",
         "prm_err_required": "Name und Prompt-Text sind erforderlich.",
+
+        "role_select_label": "Rolle", "role_apply_btn": "Verwenden", "role_tab": "Rolle",
+        "role_err_required": "Name und Prompt sind erforderlich",
+        "role_saved": "Rolle gespeichert: '{name}'", "role_deleted": "Rolle gelöscht: '{name}'",
+        "role_name_label": "Name", "role_prompt_label": "System-Prompt",
+        "role_size_label": "Reservierte Größe (Token, für Autocut)",
+        "role_size_info": "Begrenzt, wie viel du unten eingeben kannst, und warnt beim "
+                          "Speichern, falls das aktuelle Autocut-'first'-Budget "
+                          "überschritten wird.",
+        "role_save_btn": "Rolle speichern",
+        "role_tab_desc": "Rollen werden einmal zu Beginn eines neuen Chats ausgewählt "
+                         "(über die Auswahl im Chat-Tab) und bleiben für den Rest als "
+                         "unsichtbare System-Nachricht erhalten — im Unterschied zu "
+                         "Prompts, die jederzeit manuell eingefügt werden.",
+        "role_warn_cut": "⚠️ Diese Rolle hat ~{actual} Token, aber das "
+                        "Autocut-'first'-Budget beträgt nur {first} — sie könnte "
+                        "mitten im Chat abgeschnitten werden. Erhöhe autocut_first in "
+                        "den Einstellungen oder kürze die Rolle.",
+        "role_tok_count": "~{n} Token", "role_tok_count_cap": "~{n} / {cap} Token",
+        "role_active_label": "🎭 Rolle: {name}",
     },
 
     # ── French ───────────────────────────────────────────────────────────────
@@ -1458,6 +1516,7 @@ STRINGS: dict[str, dict] = {
         "worker_error": "[erreur] **{model}** @ {host} — {e}",
         "team_done": "\n\n**Terminé.**",
         "provide_name_command_profile": "Veuillez indiquer un nom et une commande.",
+        "glossary_tab": "Glossaire",
         "prompts_tab": "Prompts", "prompts_desc": "Bibliothèque de prompts — sauvegarder, rechercher par nom/modèle/domaine.",
         "prm_filter_label": "Filtrer", "prm_refresh_btn": "Actualiser",
         "prm_list_header": "### Prompts enregistrés", "prm_none": "Aucun prompt encore.",
@@ -1468,6 +1527,25 @@ STRINGS: dict[str, dict] = {
         "prm_prompt_label_g": "Texte du prompt", "prm_save_btn": "Enregistrer",
         "prm_saved": "Enregistré : {name}", "prm_deleted": "Supprimé : {name}",
         "prm_err_required": "Le nom et le texte du prompt sont requis.",
+
+        "role_select_label": "Rôle", "role_apply_btn": "Utiliser", "role_tab": "Rôle",
+        "role_err_required": "Le nom et le prompt sont requis",
+        "role_saved": "Rôle enregistré : '{name}'", "role_deleted": "Rôle supprimé : '{name}'",
+        "role_name_label": "Nom", "role_prompt_label": "Prompt système",
+        "role_size_label": "Taille réservée (jetons, pour autocut)",
+        "role_size_info": "Limite ce que vous pouvez saisir ci-dessous, et avertit à "
+                          "l'enregistrement si cela dépasse le budget 'first' actuel d'autocut.",
+        "role_save_btn": "Enregistrer le rôle",
+        "role_tab_desc": "Les rôles sont choisis une fois au début d'une nouvelle "
+                         "conversation (via le sélecteur de l'onglet Chat) et restent un "
+                         "message système invisible pour le reste de la conversation — "
+                         "contrairement aux Prompts, insérés manuellement à tout moment.",
+        "role_warn_cut": "⚠️ Ce rôle fait ~{actual} jetons mais le budget 'first' "
+                        "d'autocut n'est que de {first} — il risque d'être coupé en "
+                        "cours de conversation. Augmentez autocut_first dans les "
+                        "Paramètres ou raccourcissez le rôle.",
+        "role_tok_count": "~{n} jetons", "role_tok_count_cap": "~{n} / {cap} jetons",
+        "role_active_label": "🎭 Rôle : {name}",
     },
 
     # ── Spanish ───────────────────────────────────────────────────────────────
@@ -1756,6 +1834,7 @@ STRINGS: dict[str, dict] = {
         "worker_error": "[error] **{model}** @ {host} — {e}",
         "team_done": "\n\n**Hecho.**",
         "provide_name_command_profile": "Indique un nombre y un comando.",
+        "glossary_tab": "Glosario",
         "prompts_tab": "Prompts", "prompts_desc": "Biblioteca de prompts — guardar, buscar por nombre/modelo/área.",
         "prm_filter_label": "Filtrar", "prm_refresh_btn": "Actualizar",
         "prm_list_header": "### Prompts guardados", "prm_none": "Sin prompts aún.",
@@ -1766,6 +1845,24 @@ STRINGS: dict[str, dict] = {
         "prm_prompt_label_g": "Texto del prompt", "prm_save_btn": "Guardar",
         "prm_saved": "Guardado: {name}", "prm_deleted": "Eliminado: {name}",
         "prm_err_required": "El nombre y el texto del prompt son obligatorios.",
+
+        "role_select_label": "Rol", "role_apply_btn": "Usar", "role_tab": "Rol",
+        "role_err_required": "Se requieren nombre y prompt",
+        "role_saved": "Rol guardado: '{name}'", "role_deleted": "Rol eliminado: '{name}'",
+        "role_name_label": "Nombre", "role_prompt_label": "Prompt de sistema",
+        "role_size_label": "Tamaño reservado (tokens, para autocut)",
+        "role_size_info": "Limita lo que puedes escribir abajo, y advierte al guardar si "
+                          "supera el presupuesto 'first' actual de autocut.",
+        "role_save_btn": "Guardar rol",
+        "role_tab_desc": "Los roles se eligen una vez al inicio de un nuevo chat "
+                         "(mediante el selector en la pestaña Chat) y permanecen como un "
+                         "mensaje de sistema invisible el resto del chat — a diferencia "
+                         "de los Prompts, que se insertan manualmente en cualquier momento.",
+        "role_warn_cut": "⚠️ Este rol tiene ~{actual} tokens pero el presupuesto 'first' "
+                        "de autocut es solo {first} — podría cortarse a mitad del chat. "
+                        "Aumenta autocut_first en Ajustes o acorta el rol.",
+        "role_tok_count": "~{n} tokens", "role_tok_count_cap": "~{n} / {cap} tokens",
+        "role_active_label": "🎭 Rol: {name}",
     },
 
     # ── Portuguese ────────────────────────────────────────────────────────────
@@ -2054,6 +2151,7 @@ STRINGS: dict[str, dict] = {
         "worker_error": "[erro] **{model}** @ {host} — {e}",
         "team_done": "\n\n**Concluído.**",
         "provide_name_command_profile": "Forneça um nome e um comando.",
+        "glossary_tab": "Glossário",
         "prompts_tab": "Prompts", "prompts_desc": "Biblioteca de prompts — salvar, pesquisar por nome/modelo/área.",
         "prm_filter_label": "Filtrar", "prm_refresh_btn": "Atualizar",
         "prm_list_header": "### Prompts salvos", "prm_none": "Nenhum prompt ainda.",
@@ -2064,6 +2162,24 @@ STRINGS: dict[str, dict] = {
         "prm_prompt_label_g": "Texto do prompt", "prm_save_btn": "Salvar",
         "prm_saved": "Salvo: {name}", "prm_deleted": "Excluído: {name}",
         "prm_err_required": "Nome e texto do prompt são obrigatórios.",
+
+        "role_select_label": "Papel", "role_apply_btn": "Usar", "role_tab": "Papel",
+        "role_err_required": "Nome e prompt são obrigatórios",
+        "role_saved": "Papel salvo: '{name}'", "role_deleted": "Papel excluído: '{name}'",
+        "role_name_label": "Nome", "role_prompt_label": "Prompt de sistema",
+        "role_size_label": "Tamanho reservado (tokens, para autocut)",
+        "role_size_info": "Limita o quanto você pode digitar abaixo, e avisa ao salvar "
+                          "se ultrapassar o orçamento 'first' atual do autocut.",
+        "role_save_btn": "Salvar papel",
+        "role_tab_desc": "Papéis são escolhidos uma vez no início de uma nova conversa "
+                         "(pelo seletor na aba Chat) e permanecem como uma mensagem de "
+                         "sistema invisível pelo resto dela — diferente dos Prompts, "
+                         "que são inseridos manualmente a qualquer momento.",
+        "role_warn_cut": "⚠️ Este papel tem ~{actual} tokens, mas o orçamento 'first' "
+                        "do autocut é de apenas {first} — pode ser cortado no meio da "
+                        "conversa. Aumente autocut_first em Configurações ou reduza o papel.",
+        "role_tok_count": "~{n} tokens", "role_tok_count_cap": "~{n} / {cap} tokens",
+        "role_active_label": "🎭 Papel: {name}",
     },
 }
 

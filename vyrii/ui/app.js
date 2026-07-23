@@ -86,6 +86,8 @@ const state = {
   smartCtx: true,
   fixedCtx: 4096,
   incognito: false,
+  rolePrompt: null,   // selected role's system prompt for this chat, null if none
+  roleName:   null,   // its display name, for the active-role label
 };
 
 // ── VIEWPORT HEIGHT (keeps --app-h = actual visible height on mobile) ─────
@@ -182,6 +184,12 @@ function applyLang(l) {
     const el = document.getElementById(id);
     if (el && el.value !== l) el.value = l;
   });
+
+  // Active-role badge's text is set once via textContent (selectRole()), not
+  // [data-i18n], since it needs the role's name interpolated — so it doesn't
+  // get touched by the loop above and would otherwise stay frozen in whatever
+  // language was active when the role was picked.
+  if (state.roleName) _showActiveRoleLabel(state.roleName);
 }
 
 function t(key) {
@@ -372,6 +380,7 @@ function switchTab(tab) {
   if (tab === 'svitovyd')  loadProjectSelects();
   if (tab === 'prompts')   prmRefresh();
   if (tab === 'glossary')  glossaryRefreshProjects();
+  if (tab === 'role')      roleRefresh();
 }
 
 // ── MARKDOWN RENDERER ─────────────────────────────────
@@ -717,6 +726,10 @@ function newChat() {
   state.chatMessages = [];
   state.chatId     = null;
   state.savedCount = 0;
+  state.rolePrompt = null;
+  state.roleName   = null;
+  _showRolePicker();
+  _hideActiveRoleLabel();
   renderChatMessages();
   updateCtxIndicator();
 }
@@ -748,6 +761,9 @@ async function compactChat() {
     renderChatMessages();
     updateCtxIndicator();
     showToast(t('compacted_ok'));
+    // compact effectively starts a fresh conversation container — role's
+    // "new chat" moment has already passed for these messages, though, so
+    // keep the picker hidden rather than re-showing it.
   } catch (e) {
     showToast(t('error_prefix') + e.message);
   } finally {
@@ -808,6 +824,10 @@ async function loadHistoryChat(chatId) {
     state.chatMessages = data.messages || [];
     state.chatId       = chatId;
     state.savedCount   = state.chatMessages.length;
+    state.rolePrompt   = null;
+    state.roleName     = null;
+    _hideRolePicker();
+    _hideActiveRoleLabel();
     renderChatMessages();
     updateCtxIndicator();
     document.getElementById('chat-hist-panel').classList.remove('open');
@@ -944,6 +964,13 @@ async function sendChat() {
 
   // messages to send: all except the last empty assistant placeholder
   const toSend = state.chatMessages.slice(0, -1);
+  if (state.rolePrompt) {
+    // Prepended before the server applies autocut, so the role's `first`
+    // budget reservation actually protects it (same as the Gradio side).
+    toSend.unshift({ role: 'system', content: state.rolePrompt });
+  }
+  // Once a message goes out, the "pick a role" moment has passed for this chat.
+  _hideRolePicker();
 
   try {
     const resp = await fetch('/v1/chat/completions', {
@@ -3000,6 +3027,204 @@ function prmCopy(id) {
   const p = _prmAll.find(x => x.id === id);
   if (!p) return;
   _copyText(p.prompt);
+}
+
+// ── ROLE (Role tab — CRUD; separate from the Prompts library above:
+//    a Role is picked once at the start of a chat via the Role drawer/button
+//    in Chat, not manually inserted) ─────────────────────────────────────
+let _roleAll = [];
+
+async function roleRefresh() {
+  try {
+    const data = await (await fetch('/vyrii/roles')).json();
+    _roleAll = data.roles || [];
+    roleRender();
+  } catch { /* offline */ }
+}
+
+function roleRender() {
+  const list = document.getElementById('role-list');
+  if (!list) return;
+  if (!_roleAll.length) {
+    list.innerHTML = `<div style="font-size:13px;color:var(--text-muted)">${t('role_none')}</div>`;
+    return;
+  }
+  list.innerHTML = _roleAll.map(r => `
+    <div style="padding:10px 12px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+        <span style="font-weight:600;font-size:13px;flex:1;min-width:80px">${esc(r.name)}</span>
+        <span style="font-size:11px;padding:2px 8px;background:var(--surface);color:var(--text-muted);border-radius:10px;border:1px solid var(--border)" title="${t('role_badge_actual_title')}">${t('role_tok_count').replace('{n}', _estTokens(r.prompt))}</span>
+        ${r.size ? `<span style="font-size:11px;padding:2px 8px;background:var(--accent-dim);color:var(--accent);border-radius:10px" title="${t('role_badge_reserved_title')}">${t('role_badge_reserved').replace('{n}', r.size)}</span>` : ''}
+      </div>
+      <div style="font-size:12px;font-family:monospace;background:var(--code-bg);border-radius:4px;padding:8px;white-space:pre-wrap;word-break:break-word;max-height:140px;overflow-y:auto">${esc(r.prompt)}</div>
+      <div style="display:flex;gap:6px;margin-top:8px;align-items:center">
+        <button class="btn btn-ghost btn-sm" onclick="roleEdit('${esc(r.name)}')" style="margin-left:auto">${t('role_edit_btn')}</button>
+        <button class="btn btn-danger btn-sm" onclick="roleDelete('${esc(r.name)}')">✕</button>
+      </div>
+    </div>`).join('');
+}
+
+// chars/4 estimate — same heuristic ctxwindow.py's apply_autocut uses server-side,
+// so this stays consistent with what actually gets protected/cut.
+function _estTokens(text) {
+  return Math.ceil((text || '').length / 4);
+}
+
+// Reserved size (tokens) doubles as a live authoring cap: setting it to 500
+// blocks typing past ~2000 characters (500*4) in the prompt textarea, so you
+// can't accidentally overshoot the budget you're writing the role for. 0 = no cap.
+function roleUpdateSizeLimit() {
+  const sizeEl   = document.getElementById('role-size');
+  const promptEl = document.getElementById('role-prompt');
+  if (!sizeEl || !promptEl) return;
+  const tokens = +sizeEl.value || 0;
+  if (tokens > 0) {
+    promptEl.maxLength = tokens * 4;
+  } else {
+    promptEl.removeAttribute('maxlength');
+  }
+  roleUpdatePromptSize();
+}
+
+function roleUpdatePromptSize() {
+  const el       = document.getElementById('role-prompt-size');
+  const promptEl = document.getElementById('role-prompt');
+  if (!el || !promptEl) return;
+  const cur = _estTokens(promptEl.value || '');
+  const cap = +document.getElementById('role-size')?.value || 0;
+  el.textContent = cap > 0
+    ? t('role_tok_count_cap').replace('{n}', cur).replace('{cap}', cap)
+    : t('role_tok_count').replace('{n}', cur);
+}
+
+async function roleAdd() {
+  const name   = document.getElementById('role-name').value.trim();
+  const prompt = document.getElementById('role-prompt').value.trim();
+  if (!name || !prompt) { showToast('Name and prompt text are required'); return; }
+  const declaredSize = +document.getElementById('role-size').value || 0;
+  const actualSize   = _estTokens(prompt);
+
+  await fetch('/vyrii/roles', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ name, prompt, size: declaredSize }),
+  });
+
+  // Autocut protects only the first `autocut_first` tokens from the start of
+  // the message list — a role bigger than that budget isn't guaranteed to
+  // survive being cut, even though it's always message #0. Compare the real
+  // prompt size (declared `size` is just the user's own estimate/reservation,
+  // it isn't enforced anywhere else) against the live autocut config.
+  try {
+    const cfg = await (await fetch('/vyrii/settings')).json();
+    const first = +cfg.autocut_first || 0;
+    if (cfg.autocut_enabled && first > 0 && Math.max(declaredSize, actualSize) > first) {
+      showToast(t('role_warn_cut').replace('{name}', name).replace('{actual}', actualSize).replace('{first}', first));
+    }
+  } catch { /* offline — skip the check, saving already succeeded */ }
+
+  ['role-name','role-size','role-prompt'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  roleUpdateSizeLimit();
+  roleRefresh();
+}
+
+async function roleDelete(name) {
+  await fetch(`/vyrii/roles/${encodeURIComponent(name)}`, { method: 'DELETE' });
+  roleRefresh();
+}
+
+// Loads an existing role into the Add-role form for editing. Saving afterwards
+// (roleAdd) upserts by kebab(name) — same name overwrites in place; changing
+// the name creates a new role and leaves the old one behind (not auto-renamed).
+function roleEdit(name) {
+  const r = _roleAll.find(x => x.name === name);
+  if (!r) return;
+  document.getElementById('role-name').value   = r.name;
+  document.getElementById('role-size').value   = r.size || 0;
+  document.getElementById('role-prompt').value = r.prompt;
+  roleUpdateSizeLimit();
+  const details = document.getElementById('role-form-details');
+  if (details) details.open = true;
+  document.getElementById('role-name')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// ── Role picker drawer (Chat tab) — shown only before the first message of
+//    a new chat; picking a role sets state.rolePrompt for the rest of it.
+function toggleRoles() {
+  const panel = document.getElementById('chat-role-panel');
+  const opening = !panel.classList.contains('open');
+  panel.classList.toggle('open');
+  if (opening) loadRolePicker();
+}
+
+async function loadRolePicker() {
+  const list = document.getElementById('crp-list');
+  list.innerHTML = `<div class="placeholder-text" style="padding:16px 12px">${t('loading')}</div>`;
+  try {
+    const data = await (await fetch('/vyrii/roles')).json();
+    const roles = data.roles || [];
+    if (!roles.length) {
+      list.innerHTML = `<div class="placeholder-text" style="padding:16px 12px" data-i18n="role_empty">No roles yet — create one in the Role tab</div>`;
+      return;
+    }
+    list.innerHTML = roles.map(r => `
+      <div class="chp-item" onclick="selectRole('${esc(r.name)}')">
+        <div class="chp-item-body">
+          <div class="chp-title">${esc(r.name)}</div>
+          <div class="chp-date">${t('role_tok_count').replace('{n}', _estTokens(r.prompt))}</div>
+        </div>
+      </div>`).join('');
+  } catch (e) {
+    list.innerHTML = `<div class="placeholder-text" style="padding:16px 12px">${t('error_prefix') + e.message}</div>`;
+  }
+}
+
+function selectRole(name) {
+  const r = _roleAll.find(x => x.name === name);
+  const apply = r || null;
+  if (!apply) {
+    // picker might be opened before roleRefresh() populated _roleAll (e.g.
+    // Role tab never visited this session) — fetch fresh on demand
+    fetch('/vyrii/roles').then(r => r.json()).then(data => {
+      const found = (data.roles || []).find(x => x.name === name);
+      if (found) {
+        state.rolePrompt = found.prompt;
+        state.roleName   = found.name;
+        _showActiveRoleLabel(found.name);
+      }
+      _hideRolePicker();
+    });
+    return;
+  }
+  state.rolePrompt = apply.prompt;
+  state.roleName   = apply.name;
+  _showActiveRoleLabel(apply.name);
+  _hideRolePicker();
+}
+
+function _showActiveRoleLabel(name) {
+  const el = document.getElementById('active-role-label');
+  if (!el) return;
+  el.textContent = t('role_active_label').replace('{name}', name);
+  el.style.display = '';
+}
+
+function _hideActiveRoleLabel() {
+  const el = document.getElementById('active-role-label');
+  if (el) el.style.display = 'none';
+}
+
+function _hideRolePicker() {
+  document.getElementById('chat-role-panel')?.classList.remove('open');
+  const btn = document.getElementById('btn-role');
+  if (btn) btn.style.display = 'none';
+}
+
+function _showRolePicker() {
+  const btn = document.getElementById('btn-role');
+  if (btn) btn.style.display = '';
 }
 
 // ── CTXTIMER (Settings > Diagnostics) ─────────────────────────────────────
