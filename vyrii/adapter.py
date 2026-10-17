@@ -96,14 +96,31 @@ class ChatAdapter:
         self.messages: list[dict] = []
         self.last_reply   = ""
         self._last_output = ""
+        self.llm_calls: list[tuple[list[dict], str]] = []   # (messages, reply) per call
 
     # ── LLM ──────────────────────────────────────────────────────────────────
 
     def _stream_chat(self, messages: list[dict], options: dict | None = None,
                       raise_errors: bool = False) -> str:
-        return complete(messages, self._model, self._base_url,
-                        num_ctx=self.num_ctx, backend=self._backend,
-                        timeout=self._timeout, options=options, raise_errors=raise_errors)
+        reply = complete(messages, self._model, self._base_url,
+                         num_ctx=self.num_ctx, backend=self._backend,
+                         timeout=self._timeout, options=options, raise_errors=raise_errors)
+        self.llm_calls.append((messages, reply or ""))
+        return reply
+
+    def full_context(self) -> str:
+        """Everything the model read during the flow (user turns of every LLM
+        call — fetched pages, chunks, ...) plus what it answered. This is what
+        "Add full to chat" sends, so the main chat can ask about the raw
+        material, not only about the summary."""
+        parts = []
+        for messages, reply in self.llm_calls:
+            for m in messages:
+                if m.get("role") == "user" and m.get("content"):
+                    parts.append(m["content"])
+            if reply:
+                parts.append("Answer:\n" + reply)
+        return "\n\n---\n\n".join(parts)
 
     # ── read-only aliases matching 1bcoder's chat object attribute names ─────
     # (chat.model / chat.provider / chat.timeout, no leading underscore) so

@@ -77,9 +77,13 @@ const state = {
   activeTab: 'chat',
   streaming: false,
   abortCtrl:   null,
-  chatMessages: [],   // [{role, content}]
+  // [{role, content, dbId?, meta?}] — dbId = row id in history.db (unset =
+  // not persisted yet); meta = {title, kind} for a context block added from
+  // another tab (kind 'full' = everything the tool's model read, 'summary' =
+  // what the tab shows)
+  chatMessages: [],
   chatId:      null,  // DB chat id (null = not yet saved)
-  savedCount:  0,     // how many chatMessages are already persisted
+  toolCtx:     {},    // result element id -> full context of the last run
   fileViewRaw: '',    // raw content of currently viewed file
   selectedFile: null,
   showThinking: false,
@@ -193,7 +197,7 @@ function applyLang(l) {
 }
 
 function t(key) {
-  return (I18N[state.lang] || I18N.en)[key] || key;
+  return (I18N[state.lang] || I18N.en)[key] || I18N.en[key] || key;
 }
 
 // ── MODELS ────────────────────────────────────────────
@@ -380,6 +384,7 @@ function switchTab(tab) {
   if (tab === 'svitovyd')  loadProjectSelects();
   if (tab === 'prompts')   prmRefresh();
   if (tab === 'glossary')  glossaryRefreshProjects();
+  if (tab === 'ontology')  ontologyRefreshProjects();
   if (tab === 'role')      roleRefresh();
 }
 
@@ -596,7 +601,7 @@ function retryMsg(idx) {
   const msg = state.chatMessages[idx];
   if (!msg || msg.role !== 'assistant' || state.streaming) return;
   state.chatMessages.splice(idx, 1);
-  state.savedCount = Math.min(state.savedCount, idx);
+  _histDeleteMsg(msg);   // otherwise the old answer comes back on reload
   renderChatMessages();
   const prev = state.chatMessages[idx - 1];
   if (prev && prev.role === 'user') {
@@ -635,6 +640,7 @@ function setResultMd(id, text) {
 }
 
 function setResultLoading(id) {
+  _setToolCtx(id, '');
   const el = document.getElementById(id);
   if (!el) return;
   el.innerHTML = `<span class="status-bar"><span class="status-dot"></span>${t('generating')}</span>`;
@@ -654,26 +660,59 @@ function copyResult(id) {
   _copyText(text);
 }
 
-function addToChat(id) {
+// ── CONTEXT BLOCKS ────────────────────────────────────
+// A tool tab's result goes to the chat as ONE user message shown as a
+// collapsible block — no fake "Context received" reply, so deleting the block
+// removes it from the context completely. 'summary' = what the tab shows;
+// 'full' = everything the tool's model read (fetched pages, chunks, prompts)
+// plus its answer, so the main chat can ask about the raw material too.
+
+function _setToolCtx(id, ctx) {
+  if (ctx) state.toolCtx[id] = ctx; else delete state.toolCtx[id];
+  document.querySelectorAll(`[data-full-for="${id}"]`).forEach(btn => {
+    btn.style.display = ctx ? '' : 'none';
+    if (ctx) btn.textContent = `${t('add_full_to_chat')} (~${_estTokens(ctx).toLocaleString()} tok)`;
+  });
+}
+
+function addContextBlock(title, text, kind = 'summary') {
+  text = (text || '').trim();
+  if (!text) return;
+  const head = kind === 'full' ? `[${title} — ${t('block_full')}]` : `[${title}]`;
+  state.chatMessages.push({ role: 'user', content: `${head}\n${text}`, meta: { title, kind } });
+  switchTab('chat');
+  renderChatMessages();
+  updateCtxIndicator();
+  showToast(t('ctx_added'));
+}
+
+function addToChat(id, mode = 'summary') {
   const el = document.getElementById(id);
   if (!el) return;
-  const text = (el.innerText || el.textContent).trim();
-  if (!text) return;
-
   // derive label from the enclosing tab's title
   const panel = el.closest('.tab-panel');
   const title = panel ? (panel.querySelector('.ph-title')?.textContent.trim() || '') : '';
-  const content = title ? `[${title}]\n${text}` : text;
+  if (mode === 'full' && state.toolCtx[id]) {
+    addContextBlock(title || id, state.toolCtx[id], 'full');
+  } else {
+    addContextBlock(title || id, el.innerText || el.textContent, 'summary');
+  }
+}
 
-  // inject as user + assistant pair directly into chat history (same as Gradio)
-  state.chatMessages.push({ role: 'user',      content });
-  state.chatMessages.push({ role: 'assistant', content: t('ctx_received') });
+function _blockBody(msg) {
+  // the first line is the "[Title]" header the model sees; the block shows it as its summary
+  const nl = msg.content.indexOf('\n');
+  return nl >= 0 ? msg.content.slice(nl + 1) : msg.content;
+}
 
-  switchTab('chat');
+async function deleteMsg(idx) {
+  if (state.streaming) { showToast(t('busy_streaming')); return; }
+  const msg = state.chatMessages[idx];
+  if (!msg) return;
+  state.chatMessages.splice(idx, 1);
   renderChatMessages();
-  const box = document.getElementById('chat-messages');
-  if (box) box.scrollTop = box.scrollHeight;
-  showToast(t('ctx_added'));
+  updateCtxIndicator();
+  await _histDeleteMsg(msg);
 }
 
 function autoResize(el) {
@@ -718,14 +757,13 @@ function toggleIncognito(on) {
   if (on && state.chatId) {
     fetch(`/vyrii/history/chats/${state.chatId}`, { method: 'DELETE' }).catch(() => {});
     state.chatId = null;
-    state.savedCount = 0;
+    state.chatMessages.forEach(m => delete m.dbId);
   }
 }
 
 function newChat() {
   state.chatMessages = [];
   state.chatId     = null;
-  state.savedCount = 0;
   state.rolePrompt = null;
   state.roleName   = null;
   _showRolePicker();
@@ -757,7 +795,6 @@ async function compactChat() {
       { role: 'assistant', content: t('compacted_ok') },
     ];
     state.chatId     = null;
-    state.savedCount = 0;
     renderChatMessages();
     updateCtxIndicator();
     showToast(t('compacted_ok'));
@@ -826,9 +863,12 @@ async function loadHistoryChat(chatId) {
     // of the rendered bubble list, but restore it so continuing this chat
     // still uses it (previously this was always reset to null on load).
     const rolePrompt = (allMsgs.find(m => m.role === 'system') || {}).content || null;
-    state.chatMessages = allMsgs.filter(m => m.role !== 'system');
+    state.chatMessages = allMsgs.filter(m => m.role !== 'system').map(m => {
+      const msg = { role: m.role, content: m.content, dbId: m.id };
+      if (m.meta) msg.meta = m.meta;
+      return msg;
+    });
     state.chatId       = chatId;
-    state.savedCount   = state.chatMessages.length;
     state.rolePrompt   = rolePrompt;
     state.roleName     = null;
     _hideRolePicker();
@@ -872,24 +912,34 @@ function renderChatMessages() {
     return;
   }
   container.innerHTML = state.chatMessages.map((msg, i) => {
-    const isUser = msg.role === 'user';
-    const avatar  = isUser ? '👤' : '🤖';
+    const isUser  = msg.role === 'user';
+    const isBlock = isUser && msg.meta && msg.meta.title;
+    const avatar  = isBlock ? '📎' : isUser ? '👤' : '🤖';
     const cls     = isUser ? 'user' : 'asst';
-    const name    = isUser ? 'You'  : 'Assistant';
-    const content = md(msg.content);
+    const name    = isBlock ? escHtml(msg.meta.title) : isUser ? 'You' : 'Assistant';
     const cursor  = (!isUser && i === state.chatMessages.length - 1 && state.streaming)
       ? '<span class="cursor-blink"></span>' : '';
+    let bubble;
+    if (isBlock) {
+      const body = _blockBody(msg);
+      const kind = msg.meta.kind === 'full' ? t('block_full') : t('block_summary');
+      bubble = `<details class="ctx-block"><summary>${kind} · ~${_estTokens(body).toLocaleString()} tok</summary>`
+             + `<div class="ctx-block-body">${md(body)}</div></details>`;
+    } else {
+      bubble = md(msg.content) + cursor;
+    }
     return `
       <div class="msg-row ${cls}" id="msg-${i}">
         <div class="msg-avatar ${isUser ? 'usr' : 'bot'}">${avatar}</div>
         <div class="msg-wrap">
           <span class="msg-name">${name}</span>
-          <div class="bubble">${content}${cursor}</div>
+          <div class="bubble${isBlock ? ' bubble-block' : ''}">${bubble}</div>
           <div class="msg-copy-group">
             <button class="msg-copy" onclick="copyMsgRaw(${i})" title="${t('copy_raw')}">MD</button>
             <button class="msg-copy" onclick="downloadMsgMd(${i})" title="${t('download_md')}">&#128190;</button>
             <button class="msg-copy" onclick="copyMsgFmt(${i})" title="${t('copy_fmt')}">&#128203;</button>${
               !isUser ? `<button class="msg-copy msg-retry" onclick="retryMsg(${i})" title="${t('retry_msg')}">&#x21bb;</button>` : ''}
+            <button class="msg-copy msg-delete" onclick="deleteMsg(${i})" title="${t('delete_msg')}">&#128465;</button>
           </div>
         </div>
       </div>`;
@@ -926,14 +976,36 @@ async function _histEnsureChat(title) {
   } catch { /* offline or API-only mode without DB */ }
 }
 
-async function _histSaveMsg(role, content) {
-  if (!state.chatId || !content) return;
+async function _histSaveMsg(role, content, meta = null) {
+  if (!state.chatId || !content) return null;
   try {
-    await fetch(`/vyrii/history/chats/${state.chatId}/messages`, {
+    const res = await fetch(`/vyrii/history/chats/${state.chatId}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role, content }),
+      body: JSON.stringify(meta ? { role, content, meta } : { role, content }),
     });
+    return (await res.json()).id ?? null;
+  } catch { return null; /* best-effort */ }
+}
+
+// persist every message that has no dbId yet, in order (up to index `upTo`, exclusive)
+async function _histSaveUnsaved(upTo = state.chatMessages.length) {
+  if (state.incognito || !state.chatId) return;
+  for (const msg of state.chatMessages.slice(0, upTo)) {
+    if (msg.dbId || !msg.content) continue;
+    const chatId = state.chatId;
+    const id = await _histSaveMsg(msg.role, msg.content, msg.meta || null);
+    if (id == null || state.chatId !== chatId) continue;
+    msg.dbId = id;
+    // deleted with the trash button while its save was in flight
+    if (!state.chatMessages.includes(msg)) await _histDeleteMsg(msg);
+  }
+}
+
+async function _histDeleteMsg(msg) {
+  if (!msg.dbId || !state.chatId) return;
+  try {
+    await fetch(`/vyrii/history/chats/${state.chatId}/messages/${msg.dbId}`, { method: 'DELETE' });
   } catch { /* best-effort */ }
 }
 
@@ -975,15 +1047,12 @@ async function sendChat() {
     if (isNewChat && state.rolePrompt) {
       await _histSaveMsg('system', state.rolePrompt);
     }
-    const saveUpTo = state.chatMessages.length - 1;
-    for (let i = state.savedCount; i < saveUpTo; i++) {
-      await _histSaveMsg(state.chatMessages[i].role, state.chatMessages[i].content);
-    }
-    state.savedCount = saveUpTo;
+    await _histSaveUnsaved(state.chatMessages.length - 1);
   }
 
-  // messages to send: all except the last empty assistant placeholder
-  const toSend = state.chatMessages.slice(0, -1);
+  // messages to send: all except the last empty assistant placeholder;
+  // only role+content — dbId/meta are UI bookkeeping, not for the model API
+  const toSend = state.chatMessages.slice(0, -1).map(m => ({ role: m.role, content: m.content }));
   if (state.rolePrompt) {
     // Prepended before the server applies autocut, so the role's `first`
     // budget reservation actually protects it (same as the Gradio side).
@@ -1050,8 +1119,7 @@ async function sendChat() {
     updateLastBubble();
     const last = state.chatMessages[state.chatMessages.length - 1];
     if (!state.incognito && last && last.role === 'assistant' && last.content) {
-      await _histSaveMsg('assistant', last.content);
-      state.savedCount = state.chatMessages.length;
+      await _histSaveUnsaved();
     }
     updateCtxIndicator();
   }
@@ -1105,6 +1173,7 @@ async function runWebAsk() {
     });
     const data = await res.json();
     setResultMd('wa-result', data.result ?? data.error ?? t('api_error'));
+    _setToolCtx('wa-result', data.context || '');
   } catch (e) {
     setResult('wa-result', t('error_prefix') + e.message);
   }
@@ -1150,6 +1219,7 @@ async function runWebCrawl() {
     });
     const data = await res.json();
     setResultMd('wc-result', data.result ?? data.error ?? t('api_error'));
+    _setToolCtx('wc-result', data.context || '');
   } catch (e) {
     setResult('wc-result', t('error_prefix') + e.message);
   }
@@ -1172,6 +1242,7 @@ async function runWebAnalys() {
     });
     const data = await res.json();
     setResultMd('wan-result', data.result ?? data.error ?? t('api_error'));
+    _setToolCtx('wan-result', data.context || '');
   } catch (e) {
     setResult('wan-result', t('error_prefix') + e.message);
   }
@@ -1254,6 +1325,7 @@ async function runDeepAgent() {
     });
     const data = await res.json();
     setResultMd('da-result', data.result ?? data.error ?? t('api_error'));
+    _setToolCtx('da-result', data.context || '');
   } catch (e) {
     setResult('da-result', t('error_prefix') + e.message);
   }
@@ -1361,15 +1433,7 @@ function _formatInterviewText() {
 }
 
 function addInterviewToChat() {
-  const text = _formatInterviewText();
-  if (!text) return;
-  state.chatMessages.push({ role: 'user',      content: `[Interview]\n${text}` });
-  state.chatMessages.push({ role: 'assistant', content: t('ctx_received') });
-  switchTab('chat');
-  renderChatMessages();
-  const box = document.getElementById('chat-messages');
-  if (box) box.scrollTop = box.scrollHeight;
-  showToast(t('ctx_added'));
+  addContextBlock('Interview', _formatInterviewText());
 }
 
 function copyInterview() {
@@ -1399,6 +1463,7 @@ async function runScan() {
     });
     const data = await res.json();
     setResult('sc-result', data.result ?? data.error ?? t('api_error'));
+    _setToolCtx('sc-result', data.context || '');
   } catch (e) {
     setResult('sc-result', t('error_prefix') + e.message);
   }
@@ -1545,10 +1610,12 @@ function showFileInfo(info) {
 
   const actionBtns = isFile
     ? `<button class="btn btn-ghost btn-sm" onclick="viewFile('${escapedPath}')" data-i18n="view">View</button>
-       <button class="btn btn-ghost btn-sm" onclick="fileScan('${escapedPath}')" data-i18n="scan_btn">Scan</button>`
+       <button class="btn btn-ghost btn-sm" onclick="fileScan('${escapedPath}')" data-i18n="scan_btn">Scan</button>
+       <button class="btn btn-ghost btn-sm" onclick="ontologyGoTo('${escapedPath}')" data-i18n="tab_ontology">Ontology</button>`
     : `<button class="btn btn-ghost btn-sm" onclick="fileIndex('${escapedPath}')" data-i18n="index_btn">Index</button>
        <button class="btn btn-ghost btn-sm" onclick="fileScan('${escapedPath}')" data-i18n="scan_btn">Scan</button>
-       <button class="btn btn-ghost btn-sm" onclick="glossaryGoTo('${escapedPath}')">Glossary</button>`;
+       <button class="btn btn-ghost btn-sm" onclick="glossaryGoTo('${escapedPath}')">Glossary</button>
+       <button class="btn btn-ghost btn-sm" onclick="ontologyGoTo('${escapedPath}')" data-i18n="tab_ontology">Ontology</button>`;
 
   preview.innerHTML = `
     <div class="file-info-box">
@@ -1878,6 +1945,247 @@ async function glossaryShowTerm(term) {
   }
 }
 
+// ── ONTOLOGY ─────────────────────────────────────────
+// /flow ontology from 1bcoder, ported unchanged into vyrii/flows/ontology.py —
+// see concepts/ONTOLOGY.md. The journal never loses rows: a decision only sets
+// a row's status, so resolved contradictions stay visible ("Show resolved too").
+
+let _ontologyRunId = null;
+let _ontologyTriples = [];
+
+// Files tab -> Ontology: fill the path and open the tab (as glossaryGoTo);
+// the run starts from the tab, where model / chunk / Jev are chosen
+function ontologyGoTo(path) {
+  document.getElementById('on-index-path').value = path;
+  switchTab('ontology');   // refreshes the project list
+  document.getElementById('on-index-path').scrollIntoView({ block: 'center' });
+}
+
+function _ontoProject() {
+  return document.getElementById('on-project-select').value
+      || document.getElementById('on-index-project').value.trim() || 'default';
+}
+
+async function ontologyRunIndex() {
+  const log = document.getElementById('on-index-log');
+  log.textContent = '';
+  _ontologyRunId = null;
+  const path = document.getElementById('on-index-path').value.trim();
+  if (!path) { log.textContent = t('on_folder'); return; }
+  const project = document.getElementById('on-index-project').value.trim() || 'default';
+  const body = {
+    path, project, model: getModel(),
+    chunk:  +document.getElementById('on-chunk').value || 1200,
+    jev:    document.getElementById('on-jev').checked,
+    strict: document.getElementById('on-strict').checked,
+  };
+  try {
+    const res = await fetch('/vyrii/ontology/index', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() ?? '';
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const raw = line.slice(6).trim();
+        if (raw === '[DONE]') continue;
+        try {
+          const obj = JSON.parse(raw);
+          if (obj.type === 'started') {
+            _ontologyRunId = obj.run_id;
+          } else if (obj.line) {
+            log.textContent += obj.line + '\n';
+            log.scrollTop = log.scrollHeight;
+          }
+        } catch { /* ignore malformed SSE */ }
+      }
+    }
+    _ontologyRunId = null;
+    await ontologyRefreshProjects(project);
+  } catch (e) {
+    log.textContent += '\n' + t('error_prefix') + e.message;
+  }
+}
+
+async function ontologyStopIndex() {
+  if (!_ontologyRunId) return;
+  await fetch('/vyrii/ontology/index/cancel', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ run_id: _ontologyRunId }),
+  }).catch(() => {});
+  document.getElementById('on-index-log').textContent += '\n[stopping after the current chunk…]\n';
+}
+
+async function ontologyRefreshProjects(select = null) {
+  const sel = document.getElementById('on-project-select');
+  const keep = select || sel.value;
+  try {
+    const data = await (await fetch('/vyrii/ontology/projects')).json();
+    const projects = data.projects || [];
+    sel.innerHTML = `<option value="">${escHtml(t('on_pick_project'))}</option>` + projects.map(p =>
+      `<option value="${escHtml(p.project)}">${escHtml(p.project)} — ${p.triples} · ${p.open} open</option>`
+    ).join('');
+    if (keep && projects.some(p => p.project === keep)) {
+      sel.value = keep;
+      ontologyPickProject(keep);
+    }
+  } catch (e) {
+    showToast(t('error_prefix') + e.message);
+  }
+}
+
+function ontologyPickProject(project) {
+  if (!project) {
+    ['on-journal', 'on-triples'].forEach(id => document.getElementById(id).innerHTML = '');
+    return;
+  }
+  document.getElementById('on-index-project').value = project;
+  ontologyLoadJournal();
+  ontologyLoadTriples();
+}
+
+async function ontologyLoadJournal() {
+  const box = document.getElementById('on-journal');
+  const project = document.getElementById('on-project-select').value;
+  if (!project) { box.innerHTML = ''; return; }
+  const showAll = document.getElementById('on-journal-all').checked;
+  try {
+    const data = await (await fetch('/vyrii/ontology/journal?project=' + encodeURIComponent(project))).json();
+    const rows = data.rows || [];
+    const open = rows.filter(r => r.status === 'open');
+    document.getElementById('on-open-count').textContent = open.length ? `(${open.length})` : '';
+    const shown = (showAll ? rows : open).slice().reverse();
+    if (!shown.length) {
+      box.innerHTML = `<div class="placeholder-text">${escHtml(t('on_nothing_open'))}</div>`;
+      return;
+    }
+    box.innerHTML = shown.map(_ontologyRowHtml).join('');
+  } catch (e) {
+    box.innerHTML = `<div class="placeholder-text">${t('error_prefix')}${escHtml(e.message)}</div>`;
+  }
+}
+
+function _ontologyRowHtml(r) {
+  const lines = [];
+  r.new_text.forEach(x => lines.push(`<div><b>${escHtml(t('on_not_recorded'))}</b> ${escHtml(x)}</div>`));
+  if ((r.found_in || []).length)
+    lines.push(`<div class="on-dim">${escHtml(t('on_found_in'))}: ${escHtml(r.found_in.join('; '))}</div>`);
+  lines.push(`<div class="on-dim">${escHtml(t('on_because'))}: ${escHtml(r.reason)}</div>`);
+  r.with_text.forEach(x => lines.push(`<div>${escHtml(t('on_contradicts'))}: <code>${escHtml(x)}</code></div>`));
+  if (r.note) lines.push(`<div class="on-dim">${escHtml(t('on_note'))}: ${escHtml(r.note)}</div>`);
+  let actions = '';
+  if (r.status === 'open') {
+    const btn = (choice, key) =>
+      `<button class="btn btn-ghost btn-sm" onclick="ontologyResolve(${r.id}, '${choice}')">${escHtml(t(key))}</button>`;
+    actions = `
+      <input id="on-text-${r.id}" type="text" class="form-control form-control-sm" style="width:100%;margin-top:4px"
+             placeholder="${esc(t('on_cond_ph'))}">
+      <div class="form-actions" style="flex-wrap:wrap">
+        ${btn('condition', 'on_r_condition')}${btn('known', 'on_r_known')}
+        ${btn('reject', 'on_r_reject')}${btn('override', 'on_r_override')}
+        ${r.level === 'yellow' ? btn('disjoint', 'on_r_disjoint') + btn('accept', 'on_r_accept') : ''}
+      </div>
+      <div id="on-msg-${r.id}" class="on-dim"></div>`;
+  }
+  return `
+    <div class="on-row on-${r.level} on-st-${r.status}">
+      <div class="on-row-head">#${r.id} <span class="on-badge on-${r.level}">${r.level.toUpperCase()}</span>
+        <span class="on-status">${escHtml(r.status)}</span></div>
+      ${lines.join('')}${actions}
+    </div>`;
+}
+
+async function ontologyResolve(id, choice) {
+  const project = document.getElementById('on-project-select').value;
+  const text = (document.getElementById(`on-text-${id}`)?.value || '').trim();
+  const msg = document.getElementById(`on-msg-${id}`);
+  try {
+    const res = await fetch('/vyrii/ontology/resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project, id, choice, text }),
+    });
+    const data = await res.json();
+    if (data.error) { if (msg) msg.textContent = data.error; return; }
+    if (!data.status) { if (msg) msg.textContent = data.message; return; }   // still open
+    showToast(data.message);
+    ontologyLoadJournal();
+    ontologyLoadTriples();
+  } catch (e) {
+    if (msg) msg.textContent = t('error_prefix') + e.message;
+  }
+}
+
+async function ontologyCmd(cmd) {
+  const project = _ontoProject();
+  const arg = cmd === 'show'   ? document.getElementById('on-entity').value.trim()
+            : cmd === 'sparql' ? document.getElementById('on-sparql').value.trim()
+            : ['add', 'remove', 'ask'].includes(cmd) ? document.getElementById('on-triple').value.trim()
+            : '';
+  if (['show', 'sparql', 'add', 'remove', 'ask'].includes(cmd) && !arg) return;
+  const out = document.getElementById('on-out');
+  out.style.display = '';
+  out.textContent = t('loading');
+  try {
+    const res = await fetch('/vyrii/ontology/cmd', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cmd, project, arg, strict: document.getElementById('on-strict').checked }),
+    });
+    const data = await res.json();
+    out.textContent = data.error ? t('error_prefix') + data.error : (data.result || '—');
+    document.getElementById('on-out-actions').style.display = data.error ? 'none' : '';
+    if (['add', 'remove'].includes(cmd)) {
+      await ontologyRefreshProjects(project);
+    }
+  } catch (e) {
+    out.textContent = t('error_prefix') + e.message;
+  }
+}
+
+async function ontologyLoadTriples() {
+  const project = document.getElementById('on-project-select').value;
+  if (!project) return;
+  try {
+    const data = await (await fetch('/vyrii/ontology/triples?project=' + encodeURIComponent(project))).json();
+    _ontologyTriples = data.triples || [];
+  } catch { _ontologyTriples = []; }
+  ontologyFilterTriples(document.getElementById('on-filter').value);
+}
+
+function ontologyFilterTriples(q) {
+  q = (q || '').trim().toLowerCase();
+  const rows = q ? _ontologyTriples.filter(r => r.line.toLowerCase().includes(q)) : _ontologyTriples;
+  document.getElementById('on-triple-count').textContent =
+    `(${rows.length}${q ? ' / ' + _ontologyTriples.length : ''})`;
+  const box = document.getElementById('on-triples');
+  box.innerHTML = rows.slice(0, 500).map(r => {
+    const ent = s => `<a href="#" data-ent="${esc(s)}" onclick="ontologyShowEntity(this.dataset.ent);return false">${escHtml(s)}</a>`;
+    return `<div class="on-triple">${ent(r.s)} <span class="on-pred">${escHtml(r.p)}</span> ${ent(r.o)}`
+         + (r.src ? ` <span class="on-dim">[${escHtml(r.src)}]</span>` : '') + `</div>`;
+  }).join('') + (rows.length > 500 ? `<div class="on-dim">… ${rows.length - 500} more</div>` : '');
+}
+
+function ontologyShowEntity(name) {
+  document.getElementById('on-entity').value = name;
+  ontologyCmd('show');
+  document.getElementById('on-out').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
 async function deleteFile(path) {
   if (!confirm(`Delete: ${path}?`)) return;
   try {
@@ -1967,7 +2275,7 @@ async function runRagSearch() {
       <div style="margin-bottom:14px">
         <div style="font-weight:600;margin-bottom:4px">
           ${r.rank}. ${escHtml(r.file)}
-          <span style="color:var(--text-muted);font-weight:400;font-size:12px"> score: ${r.score}</span>
+          <span style="color:var(--text-muted);font-weight:400;font-size:12px"> score: ${r.score}  chunk: ${r.chunk}</span>
         </div>
         <pre style="white-space:pre-wrap;font-size:12px;max-height:200px;overflow-y:auto">${escHtml(r.text)}</pre>
       </div>`).join('');

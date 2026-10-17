@@ -83,6 +83,9 @@ a:hover { text-decoration: underline; }
   color: var(--text);
   line-height: 1;
 }
+/* Vyrii's penguin: the birds flew south to Vyrii, the warm lands; the penguin flew the farthest south
+   and never came back */
+.sb-emoji { letter-spacing: 0; margin-right: 0.45em; font-size: 18px; vertical-align: -2px; }
 .sb-tagline {
   font-size: 10px;
   color: var(--text-muted);
@@ -675,7 +678,7 @@ select.form-control { cursor: pointer; }
 
 .btn-primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent, #fff);
   height: 38px;
 }
 .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
@@ -967,9 +970,10 @@ select.form-control { cursor: pointer; }
   :root { --nav-w: 56px; }
   .ni-label, .sb-tagline, .sf-label { display: none; }
   .sb-brand { padding: 14px 8px; text-align: center; }
-  /* show only "V" — hide the full text and inject V via ::before */
-  .sb-logo { font-size: 0; letter-spacing: 0; line-height: 1; }
-  .sb-logo::before { content: "V"; font-size: 20px; font-weight: 800; color: var(--text); }
+  /* show only the penguin — hide the name */
+  .sb-logo { letter-spacing: 0; line-height: 1; }
+  .sb-name { display: none; }
+  .sb-emoji { margin-right: 0; font-size: 22px; }
   .nav-item { justify-content: center; padding: 10px 6px; }
   .ni-icon { width: auto; }
   .split-pane { flex-direction: column; }
@@ -1084,3 +1088,43 @@ select.form-control { cursor: pointer; }
 .ctxtimer-table th {
   font-weight: 600;
 }
+
+/* ── context blocks in chat (tool results added via "Add to chat") ── */
+.msg-row.user .bubble.bubble-block {
+  background: var(--a-bubble);
+  color: var(--a-text);
+  border: 1px dashed var(--accent);
+}
+.ctx-block > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.ctx-block[open] > summary { margin-bottom: 8px; }
+.ctx-block-body { max-height: 420px; overflow: auto; }
+.msg-copy.msg-delete:hover { color: #e06c75; border-color: #e06c75; }
+
+/* ── ontology tab ── */
+.on-log {
+  margin-top: 10px; font-family: monospace; font-size: 12px;
+  max-height: 260px; overflow-y: auto; white-space: pre-wrap;
+}
+.on-count { color: var(--text-muted); font-weight: normal; font-size: 13px; }
+.on-dim { color: var(--text-muted); font-size: 12px; }
+.on-journal { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.on-row {
+  border: 1px solid var(--border); border-left-width: 4px;
+  border-radius: var(--radius-sm); padding: 8px 10px; font-size: 13px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.on-row.on-red    { border-left-color: #e06c75; }
+.on-row.on-yellow { border-left-color: #e5c07b; }
+.on-row:not(.on-st-open) { opacity: .7; }
+.on-row-head { display: flex; gap: 8px; align-items: center; font-weight: 600; }
+.on-badge { font-size: 11px; padding: 1px 6px; border-radius: var(--radius-pill); color: #111; }
+.on-badge.on-red    { background: #e06c75; }
+.on-badge.on-yellow { background: #e5c07b; }
+.on-status { color: var(--text-muted); font-weight: normal; }
+.on-triples { margin-top: 8px; max-height: 420px; overflow-y: auto; font-size: 13px; }
+.on-triple { padding: 2px 0; border-bottom: 1px solid var(--border); }
+.on-pred { color: var(--accent); font-family: monospace; margin: 0 4px; }

@@ -322,7 +322,7 @@ def _rag_research(query: str, project_id: str, store_dir: str,
                   top_n: int = 5, top_k: int = 10) -> str:
     """Query simargl file index, read files from .simargl_web/, return text."""
     try:
-        from simargl.searcher import search as _sim_search
+        from simargl.searcher import search as _sim_search, get_chunk_text as _sim_get_chunk
     except ImportError:
         print("  [rag] simargl not installed")
         return ""
@@ -349,33 +349,45 @@ def _rag_research(query: str, project_id: str, store_dir: str,
     for f in result.get("files", [])[:top_n]:
         raw_path = f.get("path", "")
         score = f.get("score", 0)
+        chunk_n = f.get("chunk_n", 0)
         filename = _os2.path.basename(raw_path)
 
-        # try webindex directory first, then raw path if absolute
+        # try webindex directory first, then project-relative convention, then raw path
         candidates = [
             _os2.path.join(web_dir, filename),
+            _os2.path.join(store_dir, project_id, raw_path),  # ~/.vyrii/<project>/<relpath> convention
             raw_path if _os2.path.isabs(raw_path) else None,
         ]
+
+        # extraction (fix_spec/scan_to) needs the whole file to find boundaries;
+        # otherwise ground the snippet in the actual matched chunk, not the file's head
+        want_full = bool(chat and (fix_spec or scan_to))
         text = ""
         for candidate in candidates:
-            if candidate and _os2.path.isfile(candidate):
-                try:
+            if not candidate or not _os2.path.isfile(candidate):
+                continue
+            try:
+                if want_full:
                     text = open(candidate, encoding="utf-8", errors="ignore").read()
+                else:
+                    text = _sim_get_chunk(candidate, chunk_n, project_id=project_id,
+                                          store_dir=simargl_store)
+                if text:
                     break
-                except Exception:
-                    continue
+            except Exception:
+                continue
 
         if not text:
             continue
 
-        if chat and (fix_spec or scan_to):
+        if want_full:
             text = _apply_extract(chat, text, fix_spec, scan_to)
         else:
             # cap per file so total RAG fits in ~50% of context window
             per_file = max(500, (getattr(chat, "num_ctx", 2048) * 2) // top_n) if chat else 3000
             text = text[:per_file]
 
-        parts.append(f"[RAG {filename}  score:{score:.3f}]\n{text}")
+        parts.append(f"[RAG {filename}  score:{score:.3f}  chunk:{chunk_n}]\n{text}")
 
     return "\n\n".join(parts)
 

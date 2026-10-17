@@ -212,6 +212,7 @@ class HistCreateRequest(BaseModel):
 class HistAddMessageRequest(BaseModel):
     role:    str
     content: str
+    meta:    dict | None = None
 
 class RagSearchRequest(BaseModel):
     project:      str
@@ -962,7 +963,14 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
     @app.post("/vyrii/history/chats/{chat_id}/messages")
     def hist_add_message(chat_id: int, req: HistAddMessageRequest):
         from . import history as _h
-        _h.add_message(chat_id, req.role, req.content)
+        msg_id = _h.add_message(chat_id, req.role, req.content, req.meta)
+        return {"ok": True, "id": msg_id}
+
+    @app.delete("/vyrii/history/chats/{chat_id}/messages/{msg_id}")
+    def hist_delete_message(chat_id: int, msg_id: int):
+        from . import history as _h
+        if not _h.delete_message(chat_id, msg_id):
+            return {"error": "not found"}
         return {"ok": True}
 
     @app.get("/vyrii/history/chats/{chat_id}")
@@ -976,7 +984,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         if not row:
             return {"error": "not found"}
         return {"id": chat_id, "title": row[0], "created_at": row[1],
-                "messages": _h.get_messages(chat_id)}
+                "messages": _h.get_messages_full(chat_id)}
 
     @app.get("/vyrii/history/search")
     def hist_search(q: str = ""):
@@ -1059,29 +1067,35 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         if not files:
             return {"results": [], "context": "", "sources": [], "mode": mode}
 
+        from simargl.searcher import get_chunk_text as _sim_get_chunk
+
         results, sources, ctx_parts = [], [], []
         for i, f in enumerate(files, 1):
             path    = _pl.Path(f.get("path", ""))
             fname   = path.name
             score   = f.get("score", 0)
+            chunk_n = f.get("chunk_n", 0)
             text    = ""
             for cand in [
                 _VYRII_HOME / ".simargl_web" / project / fname,  # webindex source
+                _VYRII_HOME / project / path,                     # /vyrii/files/index convention: ~/.vyrii/<project>/<relpath>
                 _VYRII_HOME / path,                               # files_index (relative path)
                 _pl.Path(path),                                   # absolute path
                 _VYRII_HOME / fname,                              # filename only fallback
             ]:
                 try:
                     if cand.is_file():
-                        text = cand.read_text(encoding="utf-8", errors="replace")[:3000]
+                        # actual matched chunk, not the file's first N characters
+                        text = _sim_get_chunk(str(cand), chunk_n, project_id=project,
+                                              store_dir=store_dir)
                         break
                 except Exception:
                     continue
             snippet = text[:300].replace("\n", " ")
             results.append({"rank": i, "file": fname, "score": round(score, 3),
-                            "snippet": snippet, "text": text[:1500]})
+                            "chunk": chunk_n, "snippet": snippet, "text": text[:1500]})
             sources.append(fname)
-            ctx_parts.append(f"[Source {i}: {fname}  score:{score:.2f}]\n{text}")
+            ctx_parts.append(f"[Source {i}: {fname}  score:{score:.2f}  chunk:{chunk_n}]\n{text}")
 
         return {"results": results, "context": "\n\n".join(ctx_parts), "sources": sources}
 
@@ -1311,6 +1325,76 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail=f"no such term: {_gl._kebab(term)}")
         return _gl._read_term_file(project, term)
+
+    # ── /vyrii/ontology/* ─────────────────────────────────────────────────────
+    # The logic lives in vyrii/onto_service.py, shared with flask_api.py and
+    # app.py — mirrors flask_api.py's routes 1:1, including {"error": ...}
+    # bodies (app.js reads .error, not FastAPI's .detail).
+
+    from . import onto_service as _ons
+    from fastapi.responses import JSONResponse as _JSONResponse
+    _ons.setup(_FHOME)
+
+    def _onto_err(e):
+        return _JSONResponse({"error": str(e)}, status_code=e.status)
+
+    @app.post("/vyrii/ontology/index")
+    def ontology_index(body: dict):
+        from fastapi import HTTPException
+        from .adapter import ChatAdapter
+        model = body.get("model", "") or _default_model()
+        try:
+            target = _fsafe(body.get("path", ""))
+            if not target.exists():
+                raise _ons.OntoError(f"Not found: {body.get('path', '')}")
+            args = _ons.index_args(target, body.get("project"), body.get("chunk", 1200),
+                                   body.get("strict"), body.get("jev", True))
+        except HTTPException as e:   # _fsafe: path outside ~/.vyrii
+            return _JSONResponse({"error": e.detail}, status_code=e.status_code)
+        except _ons.OntoError as e:
+            return _onto_err(e)
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
+        return StreamingResponse(_ons.index_sse(adapter, args), media_type="text/event-stream")
+
+    @app.post("/vyrii/ontology/index/cancel")
+    def ontology_index_cancel(body: dict):
+        _ons.cancel_index(body.get("run_id"))
+        return {"ok": True}
+
+    @app.get("/vyrii/ontology/projects")
+    def ontology_projects():
+        return {"projects": _ons.projects()}
+
+    @app.get("/vyrii/ontology/triples")
+    def ontology_triples(project: str = "default", q: str = ""):
+        try:
+            return {"triples": _ons.triples(project, q)}
+        except _ons.OntoError as e:
+            return _onto_err(e)
+
+    @app.get("/vyrii/ontology/journal")
+    def ontology_journal(project: str = "default"):
+        try:
+            return {"rows": _ons.journal(project)}
+        except _ons.OntoError as e:
+            return _onto_err(e)
+
+    @app.post("/vyrii/ontology/resolve")
+    def ontology_resolve(body: dict):
+        try:
+            return _ons.resolve(body.get("project"), body.get("id"),
+                                body.get("choice", ""), body.get("text"))
+        except _ons.OntoError as e:
+            return _onto_err(e)
+
+    @app.post("/vyrii/ontology/cmd")
+    def ontology_cmd(body: dict):
+        """add / remove / check / show / ask / sparql / export -> printed text."""
+        try:
+            return {"result": _ons.command(body.get("cmd", ""), body.get("project"),
+                                           body.get("arg"), body.get("strict"))}
+        except _ons.OntoError as e:
+            return _onto_err(e)
 
     # ── /vyrii/roles/* ───────────────────────────────────────────────────────
     # Separate entity from /vyrii/prompts — a Role is chosen once at the start

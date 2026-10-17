@@ -7,10 +7,11 @@
   --text:         #1A120B;
   --text-muted:   #92400E;
   --border:       #FFCC80;
-  --accent:       #F97316;
-  --accent-dim:   color-mix(in srgb, #F97316 15%, transparent);
-  --accent-hover: #EA580C;
-  --u-bubble:     #F97316;
+  --accent:       #C2410C;
+  --on-accent:    #ffffff;
+  --accent-dim:   color-mix(in srgb, #C2410C 15%, transparent);
+  --accent-hover: #9A3412;
+  --u-bubble:     #C2410C;
   --u-text:       #ffffff;
   --a-bubble:     #FFF3CC;
   --a-text:       #1A120B;

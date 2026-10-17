@@ -8,6 +8,7 @@
   --text-muted:   #8b949e;
   --border:       #30363d;
   --accent:       #818cf8;
+  --on-accent:    #0d1117;
   --accent-dim:   color-mix(in srgb, #818cf8 15%, transparent);
   --accent-hover: #6366f1;
   --u-bubble:     #6366f1;

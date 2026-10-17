@@ -5,9 +5,10 @@
   --sidebar-bg:   #0f1e26;
   --sidebar-bdr:  #1a2d38;
   --text:         #CDD3DE;
-  --text-muted:   #65737E;
+  --text-muted:   #93a1ad;
   --border:       #2d4454;
   --accent:       #5FB3B3;
+  --on-accent:    #0f1e26;
   --accent-dim:   color-mix(in srgb, #5FB3B3 15%, transparent);
   --accent-hover: #4e9d9d;
   --u-bubble:     #5FB3B3;

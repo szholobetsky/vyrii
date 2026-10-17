@@ -391,11 +391,12 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
                 f"Source: {url}\n\n{page}\n\n---\n\n"
                 f"Question: {question}\n\nAnswer based ONLY on the content above."
             )
-            return jsonify({"result": complete([{"role": "user", "content": prompt}],
-                                               model, base_url, backend=backend, timeout=timeout)})
+            answer = complete([{"role": "user", "content": prompt}],
+                              model, base_url, backend=backend, timeout=timeout)
+            return jsonify({"result": answer, "context": f"{prompt}\n\n---\n\nAnswer:\n{answer}"})
         adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
         _wf.run(adapter, f"{question} -d {top_n}")
-        return jsonify({"result": adapter.last_reply or "No results."})
+        return jsonify({"result": adapter.last_reply or "No results.", "context": adapter.full_context()})
 
     # ── /vyrii/webcrawl ───────────────────────────────────────────────────────
 
@@ -465,7 +466,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
             except Exception:
                 pass
 
-        return jsonify({"result": adapter.last_reply or "No results."})
+        return jsonify({"result": adapter.last_reply or "No results.", "context": adapter.full_context()})
 
     # ── /vyrii/deepagent ──────────────────────────────────────────────────────
 
@@ -493,7 +494,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
             _vyrii_home = pathlib.Path.home() / ".vyrii"
             args += f' --rag {rag_proj} --rag-store "{_vyrii_home}"'
         _df.run(adapter, args)
-        return jsonify({"result": adapter.last_reply or "No output."})
+        return jsonify({"result": adapter.last_reply or "No output.", "context": adapter.full_context()})
 
     # ── /vyrii/webanalys ──────────────────────────────────────────────────────
 
@@ -509,7 +510,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
             return jsonify({"error": "query is required"})
         adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
         _waf.run(adapter, f'"{query}" -n {n}')
-        return jsonify({"result": adapter.last_reply or "No results."})
+        return jsonify({"result": adapter.last_reply or "No results.", "context": adapter.full_context()})
 
     # ── /vyrii/scan ───────────────────────────────────────────────────────────
 
@@ -536,7 +537,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         if ext:
             args += f' --ext {ext}'
         _sc.run(adapter, args)
-        return jsonify({"result": adapter.last_reply or "Done."})
+        return jsonify({"result": adapter.last_reply or "Done.", "context": adapter.full_context()})
 
     # ── /vyrii/webindex ───────────────────────────────────────────────────────
 
@@ -809,7 +810,15 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
     def hist_add_message(chat_id):
         from . import history as _h
         body = request.get_json(silent=True) or {}
-        _h.add_message(chat_id, body.get("role", ""), body.get("content", ""))
+        meta = body.get("meta") if isinstance(body.get("meta"), dict) else None
+        msg_id = _h.add_message(chat_id, body.get("role", ""), body.get("content", ""), meta)
+        return jsonify({"ok": True, "id": msg_id})
+
+    @app.route("/vyrii/history/chats/<int:chat_id>/messages/<int:msg_id>", methods=["DELETE"])
+    def hist_delete_message(chat_id, msg_id):
+        from . import history as _h
+        if not _h.delete_message(chat_id, msg_id):
+            return jsonify({"error": "not found"}), 404
         return jsonify({"ok": True})
 
     @app.route("/vyrii/history/chats/<int:chat_id>", methods=["GET"])
@@ -823,7 +832,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         if not row:
             return jsonify({"error": "not found"}), 404
         return jsonify({"id": chat_id, "title": row[0], "created_at": row[1],
-                        "messages": _h.get_messages(chat_id)})
+                        "messages": _h.get_messages_full(chat_id)})
 
     @app.route("/vyrii/compact", methods=["POST"])
     def compact_chat():
@@ -922,29 +931,35 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         if not files:
             return jsonify({"results": [], "context": "", "sources": [], "mode": mode})
 
+        from simargl.searcher import get_chunk_text as _sim_get_chunk
+
         results, sources, ctx_parts = [], [], []
         for i, f in enumerate(files, 1):
-            fpath   = pathlib.Path(f.get("path", ""))
-            fname   = fpath.name
-            score   = f.get("score", 0)
-            text    = ""
+            fpath    = pathlib.Path(f.get("path", ""))
+            fname    = fpath.name
+            score    = f.get("score", 0)
+            chunk_n  = f.get("chunk_n", 0)
+            text     = ""
             for cand in [
                 _VYRII_HOME / ".simargl_web" / project / fname,
+                _VYRII_HOME / project / fpath,   # /vyrii/files/index convention: ~/.vyrii/<project>/<relpath>
                 _VYRII_HOME / fpath,
                 pathlib.Path(fpath),
                 _VYRII_HOME / fname,
             ]:
                 try:
                     if cand.is_file():
-                        text = cand.read_text(encoding="utf-8", errors="replace")[:3000]
+                        # actual matched chunk, not the file's first N characters
+                        text = _sim_get_chunk(str(cand), chunk_n, project_id=project,
+                                              store_dir=store_dir)
                         break
                 except Exception:
                     continue
             snippet = text[:300].replace("\n", " ")
             results.append({"rank": i, "file": fname, "score": round(score, 3),
-                            "snippet": snippet, "text": text[:1500]})
+                            "chunk": chunk_n, "snippet": snippet, "text": text[:1500]})
             sources.append(fname)
-            ctx_parts.append(f"[Source {i}: {fname}  score:{score:.2f}]\n{text}")
+            ctx_parts.append(f"[Source {i}: {fname}  score:{score:.2f}  chunk:{chunk_n}]\n{text}")
 
         return jsonify({"results": results, "context": "\n\n".join(ctx_parts), "sources": sources})
 
@@ -1192,6 +1207,78 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         if not os.path.isfile(_gl._term_path(project, term)):
             return jsonify({"error": f"no such term: {_gl._kebab(term)}"}), 404
         return jsonify(_gl._read_term_file(project, term))
+
+    # ── /vyrii/ontology/* ─────────────────────────────────────────────────────
+    # The logic lives in vyrii/onto_service.py, shared with api.py and app.py;
+    # these routes only translate HTTP. See concepts/ONTOLOGY.md in simrgl.
+
+    from . import onto_service as _ons
+    _ons.setup(_FHOME)
+
+    def _onto_err(e):
+        return jsonify({"error": str(e)}), e.status
+
+    @app.route("/vyrii/ontology/index", methods=["POST"])
+    def ontology_index():
+        from .adapter import ChatAdapter
+        body = request.get_json(silent=True) or {}
+        model = body.get("model", "") or _default_model()
+        try:
+            target = _fsafe(body.get("path", ""))
+            if not target.exists():
+                raise _ons.OntoError(f"Not found: {body.get('path', '')}")
+            args = _ons.index_args(target, body.get("project"), body.get("chunk", 1200),
+                                   body.get("strict"), body.get("jev", True))
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        except _ons.OntoError as e:
+            return _onto_err(e)
+        adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
+        return Response(stream_with_context(_ons.index_sse(adapter, args)),
+                        mimetype="text/event-stream")
+
+    @app.route("/vyrii/ontology/index/cancel", methods=["POST"])
+    def ontology_index_cancel():
+        _ons.cancel_index((request.get_json(silent=True) or {}).get("run_id"))
+        return jsonify({"ok": True})
+
+    @app.route("/vyrii/ontology/projects", methods=["GET"])
+    def ontology_projects():
+        return jsonify({"projects": _ons.projects()})
+
+    @app.route("/vyrii/ontology/triples", methods=["GET"])
+    def ontology_triples():
+        try:
+            return jsonify({"triples": _ons.triples(request.args.get("project"),
+                                                    request.args.get("q", ""))})
+        except _ons.OntoError as e:
+            return _onto_err(e)
+
+    @app.route("/vyrii/ontology/journal", methods=["GET"])
+    def ontology_journal():
+        try:
+            return jsonify({"rows": _ons.journal(request.args.get("project"))})
+        except _ons.OntoError as e:
+            return _onto_err(e)
+
+    @app.route("/vyrii/ontology/resolve", methods=["POST"])
+    def ontology_resolve():
+        body = request.get_json(silent=True) or {}
+        try:
+            return jsonify(_ons.resolve(body.get("project"), body.get("id"),
+                                        body.get("choice", ""), body.get("text")))
+        except _ons.OntoError as e:
+            return _onto_err(e)
+
+    @app.route("/vyrii/ontology/cmd", methods=["POST"])
+    def ontology_cmd():
+        """add / remove / check / show / ask / sparql / export -> printed text."""
+        body = request.get_json(silent=True) or {}
+        try:
+            return jsonify({"result": _ons.command(body.get("cmd", ""), body.get("project"),
+                                                   body.get("arg"), body.get("strict"))})
+        except _ons.OntoError as e:
+            return _onto_err(e)
 
     # ── /vyrii/roles/* ────────────────────────────────────────────────────────
     # Separate entity from /vyrii/prompts — a Role is chosen once at the start

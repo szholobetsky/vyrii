@@ -89,25 +89,31 @@ def _list_rag_projects() -> list:
 
 def _rag_search(query: str, project: str, top_k: int = 3) -> tuple[list, str]:
     """Query simargl index. Returns (source_filenames, formatted_context_text)."""
+    store_dir = str(VYRII_HOME / ".simargl")
     try:
-        from simargl.searcher import search as _sim_search
+        from simargl.searcher import search as _sim_search, get_chunk_text as _sim_get_chunk
         result = _sim_search(
             query, mode="file", top_n=top_k,
             project_id=project,
-            store_dir=str(VYRII_HOME / ".simargl"),
+            store_dir=store_dir,
         )
         parts: list = []
         sources: list = []
         for f in result.get("files", [])[:top_k]:
-            fname = _pathlib.Path(f.get("path", "")).name
-            score = f.get("score", 0)
+            fpath   = _pathlib.Path(f.get("path", ""))
+            fname   = fpath.name
+            score   = f.get("score", 0)
+            chunk_n = f.get("chunk_n", 0)
             for candidate in [
                 VYRII_HOME / ".simargl_web" / project / fname,
-                _pathlib.Path(f.get("path", "")),
+                VYRII_HOME / project / fpath,   # /vyrii/files/index convention: ~/.vyrii/<project>/<relpath>
+                fpath,
             ]:
                 if candidate.is_file():
-                    text = candidate.read_text(encoding="utf-8", errors="replace")[:3000]
-                    parts.append(f"[{fname}  score:{score:.2f}]\n{text}")
+                    # actual matched chunk, not the file's first N characters
+                    text = _sim_get_chunk(str(candidate), chunk_n, project_id=project,
+                                          store_dir=store_dir)
+                    parts.append(f"[{fname}  score:{score:.2f}  chunk:{chunk_n}]\n{text}")
                     sources.append(fname)
                     break
         return sources, "\n\n".join(parts)
@@ -123,11 +129,12 @@ def _rag_tab_search(project: str, query: str, top_k: int):
         yield "_Provide a project and a query._", "", _gr.update(visible=False), "", "", ""
         return
     yield "_Searching..._", "", _gr.update(visible=False), "", "", ""
+    store_dir = str(VYRII_HOME / ".simargl")
     try:
-        from simargl.searcher import search as _sim_search
+        from simargl.searcher import search as _sim_search, get_chunk_text as _sim_get_chunk
         result = _sim_search(query, mode="file", top_n=int(top_k),
                              project_id=project,
-                             store_dir=str(VYRII_HOME / ".simargl"))
+                             store_dir=store_dir)
         files = result.get("files", [])[:int(top_k)]
     except Exception as e:
         yield f"[RAG error: {e}]", "", _gr.update(visible=False), "", "", ""
@@ -140,18 +147,22 @@ def _rag_tab_search(project: str, query: str, top_k: int):
     src_lines.append(f"**Query:** {query}\n\n**Sources:**")
     full_lines.append(f"**Query:** {query}\n")
     for i, f in enumerate(files, 1):
-        fname = _pathlib.Path(f.get("path", "")).name
-        score = f.get("score", 0)
+        fpath   = _pathlib.Path(f.get("path", ""))
+        fname   = fpath.name
+        score   = f.get("score", 0)
+        chunk_n = f.get("chunk_n", 0)
         text = ""
         for cand in [VYRII_HOME / ".simargl_web" / project / fname,
-                     _pathlib.Path(f.get("path", ""))]:
+                     VYRII_HOME / project / fpath,   # /vyrii/files/index convention
+                     fpath]:
             if cand.is_file():
-                text = cand.read_text(encoding="utf-8", errors="replace")[:3000]
+                # actual matched chunk, not the file's first N characters
+                text = _sim_get_chunk(str(cand), chunk_n, project_id=project, store_dir=store_dir)
                 break
         snippet = text[:200].replace("\n", " ")
-        out_lines.append(f"**{i}. {fname}** (score: {score:.2f})\n```\n{text[:1500]}\n```")
+        out_lines.append(f"**{i}. {fname}** (score: {score:.2f}, chunk {chunk_n})\n```\n{text[:1500]}\n```")
         src_lines.append(f"{i}. `{fname}` ({score:.2f})\n   _{snippet}_")
-        full_lines.append(f"[Source {i}: {fname}  score:{score:.2f}]\n{text}")
+        full_lines.append(f"[Source {i}: {fname}  score:{score:.2f}  chunk:{chunk_n}]\n{text}")
 
     yield ("\n\n".join(out_lines), "",
            _gr.update(visible=True),
@@ -603,6 +614,14 @@ _JS_SWITCH_TO_GLOSSARY = (
     " const btns = document.querySelectorAll('[role=\"tab\"]');"
     " for (const b of btns) {"
     "  if (b.textContent.trim() === 'Glossary') { b.click(); break; }"
+    " }"
+    " }, 200); }"
+)
+_JS_SWITCH_TO_ONTOLOGY = (
+    "() => { setTimeout(() => {"
+    " const btns = document.querySelectorAll('[role=\"tab\"]');"
+    " for (const b of btns) {"
+    "  if (b.textContent.trim() === 'Ontology') { b.click(); break; }"
     " }"
     " }, 200); }"
 )
@@ -3222,6 +3241,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     fi_to_index  = gr.Button(t["files_to_index_btn"], size="sm", scale=1)
                     fi_to_view   = gr.Button(t["files_to_view_btn"],  size="sm", scale=1)
                     fi_to_glossary = gr.Button("Glossary", size="sm", scale=1)
+                    fi_to_ontology = gr.Button("Ontology", size="sm", scale=1)
 
                 with gr.Row():
                     fi_mkdir_path = gr.Textbox(label=t["files_mkdir_label"],
@@ -3626,6 +3646,204 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                     lambda p: p or "",
                     inputs=[fi_sel_state], outputs=[gl_index_path],
                     js=_JS_SWITCH_TO_GLOSSARY,
+                )
+
+            # ══════════════════════════════════════════════════════════════════
+            # Ontology — /flow ontology from 1bcoder (vyrii/flows/ontology.py);
+            # the logic is shared with the web UI via vyrii/onto_service.py
+            # ══════════════════════════════════════════════════════════════════
+            with gr.Tab("Ontology"):
+                from . import onto_service as _ons
+                _ons.setup(VYRII_HOME)
+
+                gr.Markdown("### Index a folder or a file")
+                with gr.Row():
+                    on_index_path    = gr.Textbox(label="Folder or file (relative to ~/.vyrii)", scale=3)
+                    on_index_project = gr.Textbox(label="Project", value="default", scale=1)
+                with gr.Row():
+                    on_chunk  = gr.Number(label="Chunk (chars)", value=1200, precision=0)
+                    on_jev    = gr.Checkbox(label="Jev grounding (drops triples the text does not state)",
+                                            value=True)
+                    on_strict = gr.Checkbox(label="--strict (YELLOW conflicts also go to the journal)")
+                with gr.Row():
+                    on_index_btn  = gr.Button("Run index", variant="primary", scale=2)
+                    on_cancel_btn = gr.Button("Stop", scale=1)
+                on_index_log = gr.Markdown("")
+                on_run_state = gr.State("")
+
+                def _on_index(path, project, chunk, jev_on, strict,
+                              model, ollama_u, backend_label, timeout_v):
+                    from .adapter import ChatAdapter
+                    path = (path or "").strip()
+                    if not path:
+                        yield "Provide a folder or file path.", ""
+                        return
+                    try:
+                        target = _resolve_safe(path)
+                        if not target.exists():
+                            raise _ons.OntoError(f"Not found: {path}")
+                        args = _ons.index_args(target, project, chunk, strict, jev_on)
+                    except Exception as e:
+                        yield f"Error: {e}", ""
+                        return
+                    _m, _u, _b = parse_model_spec(model)
+                    adapter = ChatAdapter(model=_m, base_url=_u or ollama_u,
+                                          backend=_b or _backend_key(backend_label),
+                                          timeout=int(timeout_v))
+                    lines, run_id = [], ""
+                    for kind, value in _ons.run_index(adapter, args):
+                        if kind == "started":
+                            run_id = value
+                            continue
+                        lines.append(value)
+                        yield '```\n' + '\n'.join(lines[-60:]) + '\n```', run_id
+                    yield '```\n' + '\n'.join(lines[-60:]) + '\n```', ""
+
+                on_index_btn.click(
+                    _on_index,
+                    inputs=[on_index_path, on_index_project, on_chunk, on_jev, on_strict,
+                            g_model, g_url, g_backend, s_timeout],
+                    outputs=[on_index_log, on_run_state],
+                )
+                on_cancel_btn.click(_ons.cancel_index, inputs=[on_run_state], outputs=[],
+                                    queue=False)
+
+                gr.Markdown("---\n### Conflict journal")
+                with gr.Row():
+                    on_refresh_btn = gr.Button("Refresh projects", size="sm", scale=1)
+                    on_project_dd  = gr.Dropdown(label="Project", choices=[], scale=3)
+                    on_show_all    = gr.Checkbox(label="Show resolved too", scale=1)
+                on_journal_md = gr.Markdown("")
+                with gr.Row():
+                    on_row_id  = gr.Number(label="Row #", precision=0, scale=1)
+                    on_choice  = gr.Dropdown(
+                        label="Decision", scale=2, value="condition",
+                        choices=[("Add a condition", "condition"), ("Known exception", "known"),
+                                 ("Reject the new fact", "reject"), ("Override the old fact", "override"),
+                                 ("Disjoint (YELLOW)", "disjoint"), ("Accept (YELLOW)", "accept")])
+                    on_choice_text = gr.Textbox(label="Condition / note", scale=3)
+                    on_resolve_btn = gr.Button("Resolve", scale=1)
+                on_resolve_msg = gr.Markdown("")
+
+                gr.Markdown("---\n### Triples")
+                on_filter   = gr.Textbox(label="Filter")
+                on_triples  = gr.Code(label="Triples", language=None, lines=12)
+
+                gr.Markdown("---\n### Ask the base")
+                with gr.Row():
+                    on_entity   = gr.Textbox(label="Entity", scale=3)
+                    on_show_btn = gr.Button("Show", scale=1)
+                with gr.Row():
+                    on_triple = gr.Textbox(label="Triple  (subject :: predicate :: object)", scale=3)
+                    on_add_btn    = gr.Button("Add", scale=1)
+                    on_remove_btn = gr.Button("Remove", scale=1)
+                    on_ask_btn    = gr.Button("Ask", scale=1)
+                with gr.Row():
+                    on_sparql     = gr.Textbox(label="SPARQL", lines=2, scale=3)
+                    on_sparql_btn = gr.Button("Run SPARQL", scale=1)
+                with gr.Row():
+                    on_check_btn  = gr.Button("Check", size="sm")
+                    on_export_btn = gr.Button("Export", size="sm")
+                on_out = gr.Code(label="Output", language=None, lines=10)
+
+                def _on_project(selected, fallback):
+                    return selected or (fallback or "").strip() or "default"
+
+                def _on_journal_md(project, show_all):
+                    if not project:
+                        return ""
+                    try:
+                        rows = _ons.journal(project)
+                    except _ons.OntoError as e:
+                        return f"Error: {e}"
+                    shown = [r for r in rows if show_all or r["status"] == "open"][::-1]
+                    if not shown:
+                        return "_Nothing open._"
+                    out = []
+                    for r in shown:
+                        out.append(f"**#{r['id']} {r['level'].upper()}** · {r['status']}")
+                        out += [f"- NOT RECORDED: {x}" for x in r["new_text"]]
+                        if r.get("found_in"):
+                            out.append(f"- found in: {'; '.join(r['found_in'])}")
+                        out.append(f"- because: {r['reason']}")
+                        out += [f"- contradicts: `{x}`" for x in r["with_text"]]
+                        if r.get("note"):
+                            out.append(f"- note: {r['note']}")
+                        out.append("")
+                    return "\n".join(out)
+
+                def _on_triples_text(project, q):
+                    if not project:
+                        return ""
+                    try:
+                        return "\n".join(r["line"] for r in _ons.triples(project, q))
+                    except _ons.OntoError as e:
+                        return f"Error: {e}"
+
+                def _on_refresh(current):
+                    projects = _ons.projects()
+                    choices = [(f'{p["project"]} — {p["triples"]} triples · {p["open"]} open',
+                                p["project"]) for p in projects]
+                    keep = current if any(p["project"] == current for p in projects) else None
+                    return gr.update(choices=choices, value=keep)
+
+                def _on_pick(project, show_all, q):
+                    return _on_journal_md(project, show_all), _on_triples_text(project, q)
+
+                on_refresh_btn.click(_on_refresh, inputs=[on_project_dd], outputs=[on_project_dd])
+                on_project_dd.change(_on_pick, inputs=[on_project_dd, on_show_all, on_filter],
+                                     outputs=[on_journal_md, on_triples])
+                on_show_all.change(_on_journal_md, inputs=[on_project_dd, on_show_all],
+                                   outputs=[on_journal_md])
+                on_filter.change(_on_triples_text, inputs=[on_project_dd, on_filter],
+                                 outputs=[on_triples])
+
+                def _on_resolve(project, row_id, choice, text, show_all, q):
+                    if not project:
+                        return "Pick a project first.", gr.update(), gr.update()
+                    try:
+                        res = _ons.resolve(project, int(row_id or 0), choice, text)
+                    except _ons.OntoError as e:
+                        return f"Error: {e}", gr.update(), gr.update()
+                    return (res["message"], _on_journal_md(project, show_all),
+                            _on_triples_text(project, q))
+
+                on_resolve_btn.click(
+                    _on_resolve,
+                    inputs=[on_project_dd, on_row_id, on_choice, on_choice_text, on_show_all, on_filter],
+                    outputs=[on_resolve_msg, on_journal_md, on_triples],
+                )
+
+                def _on_cmd(cmd, arg_source):
+                    def run(project, fallback, arg, strict, show_all, q):
+                        project = _on_project(project, fallback)
+                        try:
+                            out = _ons.command(cmd, project, arg if arg_source else "", strict)
+                        except _ons.OntoError as e:
+                            out = f"Error: {e}"
+                        if cmd in ("add", "remove"):
+                            return out, _on_journal_md(project, show_all), _on_triples_text(project, q)
+                        return out, gr.update(), gr.update()
+                    return run
+
+                for btn, cmd, arg_box in ((on_show_btn, "show", on_entity),
+                                          (on_add_btn, "add", on_triple),
+                                          (on_remove_btn, "remove", on_triple),
+                                          (on_ask_btn, "ask", on_triple),
+                                          (on_sparql_btn, "sparql", on_sparql),
+                                          (on_check_btn, "check", None),
+                                          (on_export_btn, "export", None)):
+                    btn.click(
+                        _on_cmd(cmd, arg_box is not None),
+                        inputs=[on_project_dd, on_index_project, arg_box or on_entity, on_strict,
+                                on_show_all, on_filter],
+                        outputs=[on_out, on_journal_md, on_triples],
+                    )
+
+                fi_to_ontology.click(
+                    lambda p: p or "",
+                    inputs=[fi_sel_state], outputs=[on_index_path],
+                    js=_JS_SWITCH_TO_ONTOLOGY,
                 )
 
             # Prompts

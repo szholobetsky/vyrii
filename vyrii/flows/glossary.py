@@ -2,13 +2,18 @@
 
 Chunks a folder of files (prose / structured data / source code), asks the
 LLM to extract terms per chunk, and builds one markdown file per term
-(DEFINITION:/FACTS:/LINK: sections) plus a flat glossary.md index. Designed
-for small local models: every LLM call that must return a structured value
-uses a strict single-line marker + regex extraction, never free parsing.
+(DEFINITION:/FACTS:/LINK:/SYNONYM: sections) plus a flat glossary.md index.
+Designed for small local models: every LLM call that must return a
+structured value uses a strict single-line marker + regex extraction, never
+free parsing.
 
-Self-contained (stdlib only) — see concepts/GLOSSARY.md for the full design
-rationale (Karpathy llm-wiki inspiration, why code needs a think-step, why
---unique is pure Python not an LLM continuation trick).
+Self-contained (stdlib only) for the core index/show/extract/find/relink
+pipeline — see concepts/GLOSSARY.md for the full design rationale (Karpathy
+llm-wiki inspiration, why code needs a think-step, why --unique is pure
+Python not an LLM continuation trick). --synonyms is the one deliberate
+exception: an opt-in flag that needs radogast[embed] (soft dependency,
+try/except ImportError, same pattern as simargl in deepagent_md.py's
+_rag_research) — everything else works with zero extra installs.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Usage:
@@ -39,6 +44,15 @@ index flags:
   --unique          dedupe new DEFINITION:/FACTS: candidates against existing
                      ones (interactive, no LLM) instead of always appending
   --tabular         also index csv/json/yaml/tsv with a schema-profiling prompt
+  --synonyms        after indexing, cluster terms by vector closeness of
+                     DEFINITION:+FACTS: CONTENT (not name -- that's what
+                     --crosslink covers) and write SYNONYM: on clusters the
+                     user confirms interactively. Never auto-merges term
+                     files. Needs radogast[embed] (soft dependency, skipped
+                     with a message if not installed). Also available on
+                     `relink` (see below). Run once at the end against the
+                     FULL term list, same reason as --crosslink.
+  --synonym-threshold N   cosine similarity threshold for --synonyms (default 0.85)
 
   glossary.md is always re-sorted alphabetically at the end of an index run.
 
@@ -51,7 +65,10 @@ relink:   pure-Python postprocessing pass, no LLM call — re-sorts glossary.md
           and recomputes every term's LINK: against the current full term
           list. Safe to re-run anytime, including on output from an older
           run (e.g. before this feature existed, or after --crosslink was
-          skipped originally).
+          skipped originally). Accepts [--synonyms [--synonym-threshold N]]
+          too, same as index -- unlike LINK:, SYNONYM: is never recomputed
+          unconditionally here, since it needs the optional embedding
+          dependency and relink's whole point is a cheap, always-safe rerun.
 filter:   /map-style token grammar, one term.md = one "block"
           \\term  = FACTS line contains term       -term = show only matching lines
           -!term  = hide matching lines             !term = term name must NOT contain
@@ -61,6 +78,7 @@ Examples:
   /flow glossary index docs --project myapp
   /flow glossary index src --project myapp --crosslink --unique
   /flow glossary index . --project myapp --redefine --refact
+  /flow glossary index docs --project myapp --synonyms --synonym-threshold 0.85
   /flow glossary show user-birthdate ctx --project myapp
   /flow glossary extract "fix rule search" --project myapp
   /flow glossary find "amortization" --project myapp
@@ -201,6 +219,19 @@ def list_glossaries(root: str = None) -> list:
     return results
 
 
+def _parse_wikilink_list(block: str) -> list:
+    """Parse a bullet list of "[term](term.md)" (current write format) or
+    bare "term" (older files, or ones never touched by --crosslink/relink/
+    --synonyms) into a plain list of term names. Shared by LINK: and
+    SYNONYM:, which use the identical on-disk format."""
+    raw = [l.lstrip("-*").strip() for l in block.splitlines() if l.strip()]
+    out = []
+    for l in raw:
+        m = _re.match(r'\[([^\]]+)\]\([^)]+\)', l)
+        out.append(m.group(1) if m else l)
+    return out
+
+
 def _read_term_file(project: str, term: str) -> dict:
     """DEFINITION: is a growing list of candidate definitions, one bullet per
     chunk that produced one — never overwritten on an existing term (same
@@ -216,7 +247,7 @@ def _read_term_file(project: str, term: str) -> dict:
     kterm = _kebab(term)
     path = _term_path(project, kterm)
     if not _os.path.isfile(path):
-        return {"term": kterm, "definitions": [], "facts": [], "links": [], "history": []}
+        return {"term": kterm, "definitions": [], "facts": [], "links": [], "synonyms": [], "history": []}
     text = open(path, encoding="utf-8").read()
     definitions, facts, links, history = [], [], [], []
     m = _re.search(r'DEFINITION:\n(.*?)(?=\nFACTS:|\nLINK:|\nHISTORY:|\Z)', text, _re.DOTALL)
@@ -232,21 +263,18 @@ def _read_term_file(project: str, term: str) -> dict:
     m = _re.search(r'FACTS:\n(.*?)(?=\nLINK:|\nHISTORY:|\Z)', text, _re.DOTALL)
     if m:
         facts = [l.lstrip("-*").strip() for l in m.group(1).splitlines() if l.strip()]
-    m = _re.search(r'LINK:\n(.*?)(?=\nHISTORY:|\Z)', text, _re.DOTALL)
+    m = _re.search(r'LINK:\n(.*?)(?=\nSYNONYM:|\nHISTORY:|\Z)', text, _re.DOTALL)
     if m:
-        raw_links = [l.lstrip("-*").strip() for l in m.group(1).splitlines() if l.strip()]
-        links = []
-        for l in raw_links:
-            # accept both "[term](term.md)" (current write format, clickable
-            # in any standard markdown viewer) and a bare "term" (older files,
-            # or ones never touched by --crosslink/relink)
-            lm = _re.match(r'\[([^\]]+)\]\([^)]+\)', l)
-            links.append(lm.group(1) if lm else l)
+        links = _parse_wikilink_list(m.group(1))
+    synonyms = []
+    m = _re.search(r'SYNONYM:\n(.*?)(?=\nHISTORY:|\Z)', text, _re.DOTALL)
+    if m:
+        synonyms = _parse_wikilink_list(m.group(1))
     m = _re.search(r'HISTORY:\n(.*)\Z', text, _re.DOTALL)
     if m:
         history = [l.lstrip("-*").strip() for l in m.group(1).splitlines() if l.strip()]
     return {"term": kterm, "definitions": definitions, "facts": facts, "links": links,
-            "history": history}
+            "synonyms": synonyms, "history": history}
 
 
 def _write_term_file(project: str, term: str, data: dict) -> None:
@@ -265,6 +293,13 @@ def _write_term_file(project: str, term: str, data: dict) -> None:
         # part of any markdown spec) — renders clickable in VS Code/GitHub
         # previews while still regex-parseable by _read_term_file above.
         lines.append(f"- [{link}]({link}.md)")
+    lines.append("")
+    lines.append("SYNONYM:")
+    for syn in data.get("synonyms", []):
+        # same-concept cross-reference confirmed via /flow glossary --synonyms
+        # (vector closeness of DEFINITION:+FACTS:, HITL-confirmed) -- distinct
+        # from LINK:, which is literal term-name containment, not meaning.
+        lines.append(f"- [{syn}]({syn}.md)")
     lines.append("")
     lines.append("HISTORY:")
     for entry in data.get("history", []):
@@ -396,6 +431,73 @@ def _relink_project(project: str) -> int:
         if changed:
             _write_term_file(project, term, data)
             updated += 1
+    return updated
+
+
+_SYNONYM_THRESHOLD_DEFAULT = 0.85
+_SYNONYM_MODEL = "BAAI/bge-small-en-v1.5"
+
+
+def _synonym_project(project: str, threshold: float = _SYNONYM_THRESHOLD_DEFAULT) -> int:
+    """Cluster terms by vector closeness of DEFINITION:+FACTS: CONTENT, not
+    term name -- LINK:/--crosslink already covers literal name containment
+    (_phrase_in_text) and would never find "TCR" <-> "task-to-code retrieval"
+    or "user" <-> "customer". Same radogast primitives already used for
+    deepagent_tree/_md/_md plan-node dedup (LivePlanIndex): embed, cosine
+    similarity matrix, threshold-based connected components.
+
+    Never auto-merges term files -- each candidate cluster is shown to the
+    user and confirmed interactively (same HITL pattern as _dedup_facts's
+    --unique prompt), and a confirmed cluster only adds a SYNONYM: cross-
+    reference to each member, never rewrites DEFINITION:/FACTS: or deletes
+    a file. See concepts/GLOSSARY.md "Synonym ring" for the full rationale.
+
+    radogast is a soft dependency (try/except ImportError), same as simargl
+    in deepagent_md.py's _rag_research -- not in glossary.py's own hard
+    requirements, since this file is otherwise self-contained/stdlib-only."""
+    try:
+        from radogast.metrics.drift import embed
+        from radogast.metrics.similarity import similarity_matrix, cluster_by_threshold
+    except ImportError:
+        print("[glossary --synonyms] radogast not installed -- skipped "
+              "(pip install radogast[embed])")
+        return 0
+
+    terms = _load_terms(project)
+    if len(terms) < 2:
+        return 0
+    term_data = {t: _read_term_file(project, t) for t in terms}
+    texts = ["\n".join(term_data[t]["definitions"] + term_data[t]["facts"]) or t for t in terms]
+    vecs = embed(texts, _SYNONYM_MODEL, show_progress=True)
+    if vecs is None:
+        print("[glossary --synonyms] embeddings unavailable -- skipped")
+        return 0
+
+    # cluster_by_threshold excludes dot-notation ancestor/descendant pairs
+    # (is_ancestor) -- a no-op here since flat kebab-case term names never
+    # contain ".", so no synonym pair is ever incorrectly skipped.
+    clusters = cluster_by_threshold(terms, similarity_matrix(vecs), threshold)
+
+    updated = 0
+    for members in clusters:
+        print(f"\n[glossary --synonyms] possible synonym ring ({len(members)} terms):")
+        for m in members:
+            d = term_data[m]["definitions"]
+            preview = d[0][:120] if d else "(no definition)"
+            print(f"  {m}: {preview}")
+        try:
+            ans = input("  confirm as synonyms? [y/N]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            ans = "n"
+        if ans != "y":
+            continue
+        for m in members:
+            others = sorted(t for t in members if t != m)
+            data = term_data[m]
+            if data.get("synonyms") != others:
+                data["synonyms"] = others
+                _write_term_file(project, m, data)
+                updated += 1
     return updated
 
 
@@ -854,7 +956,7 @@ def _process_chunk(chat, project: str, chunk_text: str, bucket: str,
         print(f"    term: {term_idx}/{total_terms}  {cand}  "
               f"chunk: {chunk_idx}/{total_chunks}  file: {file_idx}/{total_files}")
         is_new = kterm not in known
-        data = ({"term": kterm, "definitions": [], "facts": [], "links": [], "history": []}
+        data = ({"term": kterm, "definitions": [], "facts": [], "links": [], "synonyms": [], "history": []}
                 if is_new else _read_term_file(project, kterm))
 
         # DEFINITION: never overwritten on an existing term (same append-only
@@ -950,11 +1052,15 @@ def _cmd_index(chat, rest: str) -> None:
     crosslink, rest = _pop_flag(rest, "--crosslink")
     unique, rest = _pop_flag(rest, "--unique")
     use_tabular, rest = _pop_flag(rest, "--tabular")
+    synonyms, rest = _pop_flag(rest, "--synonyms")
+    synonym_threshold, rest = _pop_flag(rest, r'--synonym-threshold\s+([\d.]+)', regex=True)
+    synonym_threshold = float(synonym_threshold) if synonym_threshold else _SYNONYM_THRESHOLD_DEFAULT
 
     path = rest.strip().strip('"\'')
     if not path:
         print("usage: /flow glossary index <path> [--project P] [--chunk 1000] [--overlap 50]")
         print("       [--redefine] [--refact] [--crosslink] [--unique] [--tabular]")
+        print("       [--synonyms [--synonym-threshold N]]")
         return
 
     unknown = [t for t in path.split() if t.startswith("--")]
@@ -962,6 +1068,7 @@ def _cmd_index(chat, rest: str) -> None:
         print(f"[glossary] unknown flag(s) for index: {', '.join(unknown)}")
         print("usage: /flow glossary index <path> [--project P] [--chunk 1000] [--overlap 50]")
         print("       [--redefine] [--refact] [--crosslink] [--unique] [--tabular]")
+        print("       [--synonyms [--synonym-threshold N]]")
         return
 
     chunk_chars = chunk_tokens * _CHARS_PER_TOKEN
@@ -1009,6 +1116,10 @@ def _cmd_index(chat, rest: str) -> None:
     if crosslink:
         n = _relink_project(project)
         print(f"[glossary] crosslink: {n} term file(s) updated")
+
+    if synonyms:
+        n = _synonym_project(project, synonym_threshold)
+        print(f"[glossary] synonyms: {n} term file(s) updated")
 
     print(f"\n[glossary] done — {len(total_touched)} term(s) touched"
           + (f": {', '.join(sorted(total_touched))}" if total_touched else ""))
@@ -1085,9 +1196,17 @@ def _cmd_find(chat, rest: str) -> None:
 
 def _cmd_relink(chat, rest: str) -> None:
     project, rest = _pop_project(rest)
+    synonyms, rest = _pop_flag(rest, "--synonyms")
+    synonym_threshold, rest = _pop_flag(rest, r'--synonym-threshold\s+([\d.]+)', regex=True)
+    synonym_threshold = float(synonym_threshold) if synonym_threshold else _SYNONYM_THRESHOLD_DEFAULT
+
     _sort_glossary(project)
     n = _relink_project(project)
     print(f"[glossary] project: {project} — glossary.md sorted, {n} term file(s) relinked")
+
+    if synonyms:
+        n2 = _synonym_project(project, synonym_threshold)
+        print(f"[glossary] synonyms: {n2} term file(s) updated")
 
 
 def _cmd_filter(project_and_tokens: str) -> None:

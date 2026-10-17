@@ -16,7 +16,7 @@
   <aside class="sidebar">
 
     <div class="sb-brand">
-      <span class="sb-logo" data-i18n="logo">V Y R I I</span>
+      <span class="sb-logo"><span class="sb-emoji" aria-hidden="true">🐧</span><span class="sb-name" data-i18n="logo">V Y R I I</span></span>
       <span class="sb-tagline" data-i18n="tagline">local AI tools</span>
     </div>
 
@@ -76,6 +76,10 @@
       <button class="nav-item" data-tab="glossary">
         <span class="ni-icon">📖</span>
         <span class="ni-label" data-i18n="tab_glossary">Glossary</span>
+      </button>
+      <button class="nav-item" data-tab="ontology">
+        <span class="ni-icon">🕸️</span>
+        <span class="ni-label" data-i18n="tab_ontology">Ontology</span>
       </button>
       <button class="nav-item" data-tab="prompts">
         <span class="ni-icon">📋</span>
@@ -333,6 +337,7 @@
         <div class="form-actions">
           <button class="btn btn-primary" onclick="runWebAsk()" data-i18n="ask">Ask</button>
           <button class="btn btn-ghost" onclick="addToChat('wa-result')" data-i18n="add_to_chat">Add to chat</button>
+          <button class="btn btn-ghost" data-full-for="wa-result" style="display:none" onclick="addToChat('wa-result','full')">Add all to chat</button>
           <button class="btn btn-ghost" onclick="copyResult('wa-result')" data-i18n="copy">Copy</button>
         </div>
         <div class="result-box" id="wa-result">
@@ -429,6 +434,7 @@
         <div class="form-actions">
           <button class="btn btn-primary" onclick="runWebCrawl()" data-i18n="crawl">Crawl</button>
           <button class="btn btn-ghost" onclick="addToChat('wc-result')" data-i18n="add_to_chat">Add to chat</button>
+          <button class="btn btn-ghost" data-full-for="wc-result" style="display:none" onclick="addToChat('wc-result','full')">Add all to chat</button>
           <button class="btn btn-ghost" onclick="copyResult('wc-result')" data-i18n="copy">Copy</button>
         </div>
 
@@ -457,6 +463,7 @@
         <div class="form-actions">
           <button class="btn btn-primary" onclick="runWebAnalys()" data-i18n="analyze">Analyze</button>
           <button class="btn btn-ghost" onclick="addToChat('wan-result')" data-i18n="add_to_chat">Add to chat</button>
+          <button class="btn btn-ghost" data-full-for="wan-result" style="display:none" onclick="addToChat('wan-result','full')">Add all to chat</button>
           <button class="btn btn-ghost" onclick="copyResult('wan-result')" data-i18n="copy">Copy</button>
         </div>
         <div class="result-box" id="wan-result">
@@ -522,6 +529,7 @@
         <div class="form-actions">
           <button class="btn btn-primary" onclick="runDeepAgent()" data-i18n="generate">Generate</button>
           <button class="btn btn-ghost" onclick="addToChat('da-result')" data-i18n="add_to_chat">Add to chat</button>
+          <button class="btn btn-ghost" data-full-for="da-result" style="display:none" onclick="addToChat('da-result','full')">Add all to chat</button>
           <button class="btn btn-ghost" onclick="copyResult('da-result')" data-i18n="copy">Copy</button>
         </div>
         <div class="result-box" id="da-result" style="flex:1;min-height:200px">
@@ -595,6 +603,7 @@
         <div class="form-actions">
           <button class="btn btn-primary" onclick="runScan()" data-i18n="compact">Compact</button>
           <button class="btn btn-ghost" onclick="addToChat('sc-result')" data-i18n="add_to_chat">Add to chat</button>
+          <button class="btn btn-ghost" data-full-for="sc-result" style="display:none" onclick="addToChat('sc-result','full')">Add all to chat</button>
           <button class="btn btn-ghost" onclick="copyResult('sc-result')" data-i18n="copy">Copy</button>
         </div>
         <div class="result-box" id="sc-result" style="flex:1">
@@ -1170,6 +1179,108 @@
           </div>
           <div id="gl-term-list" style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0"></div>
           <div id="gl-term-view" style="border-top:1px solid var(--border,#333);padding-top:10px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ONTOLOGY ── -->
+    <!-- /flow ontology from 1bcoder (vyrii/flows/ontology.py) — see concepts/ONTOLOGY.md -->
+    <div class="tab-panel" id="tab-ontology">
+      <div class="panel-header">
+        <h1 class="ph-title" data-i18n="tab_ontology">Ontology</h1>
+      </div>
+      <div class="panel-body" style="gap:16px">
+        <div class="settings-section">
+          <h3 data-i18n="on_index_h">Index a folder</h3>
+          <div class="form-row">
+            <div class="form-group flex-grow">
+              <label class="form-label" data-i18n="on_folder">Folder or file (relative to ~/.vyrii)</label>
+              <input id="on-index-path" type="text" class="form-control" placeholder="docs/hr">
+            </div>
+            <div class="form-group">
+              <label class="form-label" data-i18n="on_project">Project</label>
+              <input id="on-index-project" type="text" class="form-control" value="default">
+            </div>
+            <div class="form-group">
+              <label class="form-label" data-i18n="on_chunk">Chunk (tokens)</label>
+              <input id="on-chunk" type="number" class="form-control form-control-sm" value="1200">
+            </div>
+          </div>
+          <div class="form-group">
+            <label><input type="checkbox" id="on-jev" checked> <span data-i18n="on_jev">Check every fact with Jev</span></label>
+            <label><input type="checkbox" id="on-strict"> <span data-i18n="on_strict">Strict</span></label>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" onclick="ontologyRunIndex()" data-i18n="on_run">Run index</button>
+            <button class="btn btn-danger" onclick="ontologyStopIndex()" data-i18n="on_stop">Stop</button>
+          </div>
+          <div id="on-index-log" class="on-log"></div>
+        </div>
+
+        <div class="settings-section">
+          <h3 data-i18n="on_base_h">Knowledge base</h3>
+          <div class="form-row">
+            <div class="form-group flex-grow">
+              <select id="on-project-select" class="form-control" onchange="ontologyPickProject(this.value)">
+                <option value="" data-i18n="on_pick_project">Pick a project</option>
+              </select>
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="ontologyRefreshProjects()"
+                    style="align-self:flex-end;margin-bottom:6px" data-i18n="on_refresh">Refresh</button>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3><span data-i18n="on_journal_h">Contradictions</span> <span id="on-open-count" class="on-count"></span></h3>
+          <label><input type="checkbox" id="on-journal-all" onchange="ontologyLoadJournal()">
+            <span data-i18n="on_show_all">Show resolved too</span></label>
+          <div id="on-journal" class="on-journal"></div>
+        </div>
+
+        <div class="settings-section">
+          <h3 data-i18n="on_tools_h">Query and edit</h3>
+          <div class="form-row">
+            <div class="form-group flex-grow">
+              <label class="form-label" data-i18n="on_entity">Entity</label>
+              <input id="on-entity" type="text" class="form-control" placeholder="intern"
+                     onkeydown="if(event.key==='Enter')ontologyCmd('show')">
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="ontologyCmd('show')"
+                    style="align-self:flex-end;margin-bottom:6px" data-i18n="on_show">Show</button>
+          </div>
+          <div class="form-row">
+            <div class="form-group flex-grow">
+              <label class="form-label" data-i18n="on_triple">Triple  S :: P :: O</label>
+              <input id="on-triple" type="text" class="form-control" placeholder="man :: can :: ?">
+            </div>
+          </div>
+          <div class="form-actions" style="flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="ontologyCmd('ask')" data-i18n="on_ask">Ask</button>
+            <button class="btn btn-ghost btn-sm" onclick="ontologyCmd('add')" data-i18n="on_add">Add</button>
+            <button class="btn btn-ghost btn-sm" onclick="ontologyCmd('remove')" data-i18n="on_remove">Remove</button>
+            <button class="btn btn-ghost btn-sm" onclick="ontologyCmd('check')" data-i18n="on_check">Check base</button>
+            <button class="btn btn-ghost btn-sm" onclick="ontologyCmd('export')" data-i18n="on_export">Export Turtle</button>
+          </div>
+          <div class="form-group" style="margin-top:10px">
+            <label class="form-label" data-i18n="on_sparql">SPARQL (needs rdflib)</label>
+            <textarea id="on-sparql" class="form-control" rows="3"
+              placeholder="SELECT ?x WHERE { ?x rdfs:subClassOf+ e:user }"></textarea>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-ghost btn-sm" onclick="ontologyCmd('sparql')" data-i18n="on_run_q">Run query</button>
+          </div>
+          <pre id="on-out" class="on-log" style="display:none"></pre>
+          <div class="form-actions" id="on-out-actions" style="display:none">
+            <button class="btn btn-ghost btn-sm" onclick="addToChat('on-out')" data-i18n="add_to_chat">Add to chat</button>
+            <button class="btn btn-ghost btn-sm" onclick="copyResult('on-out')" data-i18n="copy">Copy</button>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3><span data-i18n="on_triples_h">Triples</span> <span id="on-triple-count" class="on-count"></span></h3>
+          <input id="on-filter" type="text" class="form-control" data-i18n-ph="on_filter_ph"
+                 placeholder="Filter…" oninput="ontologyFilterTriples(this.value)">
+          <div id="on-triples" class="on-triples"></div>
         </div>
       </div>
     </div>
@@ -1857,6 +1968,7 @@ Examples:
      z-index:9999;display:none;align-items:center;justify-content:center">
   <div style="background:var(--sidebar-bg,#1e293b);border:1px solid var(--border,#334155);
               border-radius:12px;padding:32px 36px;width:320px;display:flex;flex-direction:column;gap:14px">
+    <div style="font-size:40px;text-align:center;line-height:1" aria-hidden="true">🐧</div>
     <div style="font-size:22px;font-weight:700;letter-spacing:2px;text-align:center"
          data-i18n="logo">V Y R I I</div>
     <div class="form-group">

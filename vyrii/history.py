@@ -32,6 +32,11 @@ def _conn() -> sqlite3.Connection:
             FOREIGN KEY(chat_id) REFERENCES chats(id)
         )
     """)
+    # meta: JSON for messages that are not plain chat turns, e.g. a context
+    # block added from another tab ({"title": ..., "kind": "full"|"summary"})
+    cols = {r[1] for r in c.execute("PRAGMA table_info(messages)")}
+    if "meta" not in cols:
+        c.execute("ALTER TABLE messages ADD COLUMN meta TEXT")
     c.commit()
     return c
 
@@ -83,13 +88,17 @@ def create_chat(title: str) -> int:
         return cur.lastrowid
 
 
-def add_message(chat_id: int, role: str, content: str) -> None:
+def add_message(chat_id: int, role: str, content: str, meta: dict | None = None) -> int:
+    import json as _json
     with _conn() as c:
-        c.execute(
-            "INSERT INTO messages (chat_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-            (chat_id, role, content, time.time()),
+        cur = c.execute(
+            "INSERT INTO messages (chat_id, role, content, created_at, meta) VALUES (?, ?, ?, ?, ?)",
+            (chat_id, role, content, time.time(),
+             _json.dumps(meta, ensure_ascii=False) if meta else None),
         )
+        msg_id = cur.lastrowid
     _export_chat_md(chat_id)
+    return msg_id
 
 
 def get_messages(chat_id: int) -> list[dict]:
@@ -99,6 +108,35 @@ def get_messages(chat_id: int) -> list[dict]:
             (chat_id,),
         ).fetchall()
     return [{"role": role, "content": content} for role, content in rows]
+
+
+def get_messages_full(chat_id: int) -> list[dict]:
+    """Like get_messages, plus each row's id (for deleting it) and meta."""
+    import json as _json
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT id, role, content, meta FROM messages WHERE chat_id=? ORDER BY created_at, id",
+            (chat_id,),
+        ).fetchall()
+    out = []
+    for id_, role, content, meta in rows:
+        m = {"id": id_, "role": role, "content": content}
+        if meta:
+            try:
+                m["meta"] = _json.loads(meta)
+            except ValueError:
+                pass
+        out.append(m)
+    return out
+
+
+def delete_message(chat_id: int, msg_id: int) -> bool:
+    with _conn() as c:
+        cur = c.execute("DELETE FROM messages WHERE id=? AND chat_id=?", (msg_id, chat_id))
+        deleted = cur.rowcount > 0
+    if deleted:
+        _export_chat_md(chat_id)
+    return deleted
 
 
 def delete_last_messages(chat_id: int, count: int) -> None:
