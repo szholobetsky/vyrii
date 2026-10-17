@@ -34,8 +34,9 @@ from flask_cors import CORS
 
 from .engine import (
     BACKEND_OLLAMA, BACKEND_OPENAI, DEFAULT_OLLAMA,
-    complete, list_models, parse_model_spec, smart_ctx, stream_chat,
+    complete, list_models, model_capabilities, parse_model_spec, smart_ctx, stream_chat,
 )
+from . import attachments as _att
 from . import stats as _stats
 
 
@@ -173,6 +174,9 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         body = request.get_json(silent=True) or {}
         raw_model = body.get("model") or _default_model()
         messages = body.get("messages", [])
+        # files attached in the chat (paths under ~/.vyrii, uploaded to input/):
+        # documents become text in the message, images go to "images"
+        messages = _att.expand_messages(messages, pathlib.Path.home() / ".vyrii")
         do_stream = body.get("stream", False)
         cid = f"chatcmpl-{uuid.uuid4().hex[:8]}"
         created = int(time.time())
@@ -1050,10 +1054,21 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         except Exception as e:
             return jsonify({"error": str(e)})
 
+    def _unique(target: pathlib.Path) -> pathlib.Path:
+        """name.ext -> name (1).ext, name (2).ext … — a free name next to it."""
+        n, cand = 1, target
+        while cand.exists():
+            cand = target.with_name(f"{target.stem} ({n}){target.suffix}")
+            n += 1
+        return cand
+
     @app.route("/vyrii/files/upload", methods=["POST"])
     def files_upload():
         dest   = request.args.get("dest", "") or request.form.get("dest", "")
         files  = request.files.getlist("files")
+        # unique=1: never overwrite (chat attachments — an older message of a
+        # chat may point to a file of the same name)
+        unique = (request.args.get("unique", "") or request.form.get("unique", "")) in ("1", "true")
         saved: list[str] = []
         errors: list[dict] = []
         for f in files:
@@ -1061,6 +1076,8 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
                 fname = f.filename or "upload"
                 rel   = (dest.rstrip("/\\") + "/" + fname) if dest.strip() else fname
                 target = _fsafe(rel)
+                if unique:
+                    target = _unique(target)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(f.read())
                 saved.append(str(target.relative_to(_FHOME)))
@@ -1069,6 +1086,35 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         if errors and not saved:
             return jsonify({"error": errors})
         return jsonify({"ok": True, "saved": saved, **({"errors": errors} if errors else {})})
+
+    @app.route("/vyrii/files/raw", methods=["GET"])
+    def files_raw():
+        """The file itself (chat thumbnails of attached images)."""
+        try:
+            p = _fsafe(request.args.get("path", "").strip())
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        if not p.is_file():
+            return jsonify({"error": "Not a file"}), 404
+        return send_from_directory(str(p.parent), p.name)
+
+    @app.route("/vyrii/model/caps", methods=["GET"])
+    def model_caps():
+        """{"vision": true|false|null} — null = unknown (not Ollama, or no answer)."""
+        m_name, m_url, m_backend = parse_model_spec(request.args.get("model", ""))
+        caps = model_capabilities(m_name, m_url or base_url, m_backend or backend)
+        return jsonify({"capabilities": caps,
+                        "vision": None if caps is None else "vision" in caps})
+
+    @app.route("/vyrii/attach/list", methods=["GET"])
+    def attach_list():
+        """Files uploaded earlier to ~/.vyrii/input/ (the chat's "uploaded earlier")."""
+        return jsonify({"files": _att.list_input(_FHOME)})
+
+    @app.route("/vyrii/attach/check", methods=["GET"])
+    def attach_check():
+        """Can the model get this attachment? {"ok": true, "kind"} or {"ok": false, "error"}."""
+        return jsonify(_att.check(_FHOME, request.args.get("path", "")))
 
     @app.route("/vyrii/files", methods=["DELETE"])
     def files_delete():

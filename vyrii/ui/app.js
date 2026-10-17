@@ -80,8 +80,11 @@ const state = {
   // [{role, content, dbId?, meta?}] — dbId = row id in history.db (unset =
   // not persisted yet); meta = {title, kind} for a context block added from
   // another tab (kind 'full' = everything the tool's model read, 'summary' =
-  // what the tab shows)
+  // what the tab shows); meta.attachments = [{path, name, kind}] for files
+  // attached to a user message (path under ~/.vyrii, uploaded to input/)
   chatMessages: [],
+  pendingAtt:  [],    // attachments of the message being written
+  attUploads:  0,     // uploads still running
   chatId:      null,  // DB chat id (null = not yet saved)
   toolCtx:     {},    // result element id -> full context of the last run
   fileViewRaw: '',    // raw content of currently viewed file
@@ -181,6 +184,12 @@ function applyLang(l) {
   document.querySelectorAll('[data-i18n-ph]').forEach(el => {
     const key = el.dataset.i18nPh;
     if (d[key] !== undefined) el.placeholder = d[key];
+  });
+
+  // tooltips
+  document.querySelectorAll('[data-i18n-title]').forEach(el => {
+    const key = el.dataset.i18nTitle;
+    if (d[key] !== undefined) el.title = d[key];
   });
 
   // sync language selects (sidebar + settings tab)
@@ -605,7 +614,12 @@ function retryMsg(idx) {
   renderChatMessages();
   const prev = state.chatMessages[idx - 1];
   if (prev && prev.role === 'user') {
+    // sendChat pushes the question again — take the old one out, or the model
+    // gets it (and its attached files) twice
+    state.chatMessages.splice(idx - 1, 1);
+    _histDeleteMsg(prev);
     document.getElementById('chat-input').value = prev.content;
+    state.pendingAtt = [...(prev.meta?.attachments || [])];
     sendChat();
   }
 }
@@ -763,6 +777,8 @@ function toggleIncognito(on) {
 
 function newChat() {
   state.chatMessages = [];
+  state.pendingAtt   = [];
+  renderPendingAtt();
   state.chatId     = null;
   state.rolePrompt = null;
   state.roleName   = null;
@@ -926,7 +942,7 @@ function renderChatMessages() {
       bubble = `<details class="ctx-block"><summary>${kind} · ~${_estTokens(body).toLocaleString()} tok</summary>`
              + `<div class="ctx-block-body">${md(body)}</div></details>`;
     } else {
-      bubble = md(msg.content) + cursor;
+      bubble = _attHtml(msg) + md(msg.content) + cursor;
     }
     return `
       <div class="msg-row ${cls}" id="msg-${i}">
@@ -945,6 +961,7 @@ function renderChatMessages() {
       </div>`;
   }).join('');
   renderMermaid(container);
+  _loadAttThumbs(container);
   container.scrollTop = container.scrollHeight;
 }
 
@@ -977,7 +994,7 @@ async function _histEnsureChat(title) {
 }
 
 async function _histSaveMsg(role, content, meta = null) {
-  if (!state.chatId || !content) return null;
+  if (!state.chatId || (!content && !meta)) return null;
   try {
     const res = await fetch(`/vyrii/history/chats/${state.chatId}/messages`, {
       method: 'POST',
@@ -992,7 +1009,7 @@ async function _histSaveMsg(role, content, meta = null) {
 async function _histSaveUnsaved(upTo = state.chatMessages.length) {
   if (state.incognito || !state.chatId) return;
   for (const msg of state.chatMessages.slice(0, upTo)) {
-    if (msg.dbId || !msg.content) continue;
+    if (msg.dbId || (!msg.content && !msg.meta?.attachments?.length)) continue;
     const chatId = state.chatId;
     const id = await _histSaveMsg(msg.role, msg.content, msg.meta || null);
     if (id == null || state.chatId !== chatId) continue;
@@ -1023,15 +1040,22 @@ async function sendChat() {
   if (state.streaming) return;
   const input = document.getElementById('chat-input');
   const text  = input.value.trim();
-  if (!text) return;
+  const atts  = state.pendingAtt;
+  if (!text && !atts.length) return;
+  if (state.attUploads) { showToast(t('att_wait')); return; }
 
   const model = getModel();
   if (!model) { showToast(t('no_model')); return; }
 
   input.value = '';
   input.style.height = 'auto';
+  state.pendingAtt = [];
+  renderPendingAtt();
+  if (atts.some(a => a.kind === 'image')) _warnIfNoVision(model);
 
-  state.chatMessages.push({ role: 'user', content: text });
+  state.chatMessages.push(atts.length
+    ? { role: 'user', content: text, meta: { attachments: atts } }
+    : { role: 'user', content: text });
   state.chatMessages.push({ role: 'assistant', content: '' });
   state.streaming  = true;
   state.abortCtrl  = new AbortController();
@@ -1040,7 +1064,7 @@ async function sendChat() {
 
   if (!state.incognito) {
     const isNewChat = !state.chatId;
-    await _histEnsureChat(text);
+    await _histEnsureChat(text || atts.map(a => a.name).join(', '));
     // Persist the role as a hidden system message #0 — makes it survive
     // reloading this chat later (previously it only lived in state.rolePrompt,
     // in-memory, and silently vanished once you reopened the chat from history).
@@ -1051,8 +1075,11 @@ async function sendChat() {
   }
 
   // messages to send: all except the last empty assistant placeholder;
-  // only role+content — dbId/meta are UI bookkeeping, not for the model API
-  const toSend = state.chatMessages.slice(0, -1).map(m => ({ role: m.role, content: m.content }));
+  // only role+content (+ the paths of attached files, which the server turns
+  // into text / images) — dbId/meta are UI bookkeeping, not for the model API
+  const toSend = state.chatMessages.slice(0, -1).map(m => m.meta?.attachments?.length
+    ? { role: m.role, content: m.content, attachments: m.meta.attachments.map(a => a.path) }
+    : { role: m.role, content: m.content });
   if (state.rolePrompt) {
     // Prepended before the server applies autocut, so the role's `first`
     // budget reservation actually protects it (same as the Gradio side).
@@ -1124,6 +1151,223 @@ async function sendChat() {
     updateCtxIndicator();
   }
 }
+
+// ── ATTACHMENTS ───────────────────────────────────────
+// Files for the next message are uploaded at once (the Files tab's upload,
+// into ~/.vyrii/input/, never overwriting); the message keeps only their
+// paths, the server reads them on every send — a document becomes text, an
+// image goes to a vision model.
+const _ATT_IMG = /\.(png|jpe?g|webp|gif|bmp)$/i;
+
+function _attKind(name) { return _ATT_IMG.test(name) ? 'image' : 'file'; }
+
+async function attachFiles(files) {
+  for (const f of Array.from(files || [])) {
+    state.attUploads++;
+    const tmp = { path: null, name: f.name, kind: _attKind(f.name), uploading: true };
+    state.pendingAtt.push(tmp);
+    renderPendingAtt();
+    try {
+      const fd = new FormData();
+      fd.append('files', f, f.name);
+      const res  = await fetch('/vyrii/files/upload?dest=input&unique=1', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!data.ok || !data.saved?.length) throw new Error(JSON.stringify(data.error || data));
+      tmp.path = data.saved[0].replace(/\\/g, '/');
+      tmp.name = tmp.path.split('/').pop();
+      // a file the model cannot get (a PDF without pypdf, a scan, a binary
+      // file) is refused now — no chip, the upload removed again
+      const chk = await _checkAtt(tmp.path);
+      if (!chk.ok) {
+        state.pendingAtt = state.pendingAtt.filter(a => a !== tmp);
+        showToast(t('att_unread') + tmp.name + ' — ' + chk.error, 8000);
+        fetch('/vyrii/files', { method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: tmp.path }) }).catch(() => {});
+        continue;
+      }
+      tmp.kind = chk.kind || tmp.kind;
+      delete tmp.uploading;
+    } catch (e) {
+      state.pendingAtt = state.pendingAtt.filter(a => a !== tmp);
+      showToast(t('att_failed') + f.name + ': ' + e.message);
+    } finally {
+      state.attUploads--;
+      renderPendingAtt();
+    }
+  }
+}
+
+async function _checkAtt(path) {
+  try {
+    return await (await fetch('/vyrii/attach/check?path=' + encodeURIComponent(path))).json();
+  } catch (e) {
+    return { ok: true };   // an older server without the check: let it through
+  }
+}
+
+// 📎 → a small menu: upload from this computer, or pick a file uploaded earlier
+function toggleAttachMenu(e) {
+  e?.stopPropagation();
+  const m = document.getElementById('chat-attach-menu');
+  m.style.display = m.style.display === 'none' ? '' : 'none';
+}
+
+function _closeAttachMenu() {
+  const m = document.getElementById('chat-attach-menu');
+  if (m) m.style.display = 'none';
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest?.('.chat-attach-wrap')) _closeAttachMenu();
+});
+
+function attachFromComputer() {
+  _closeAttachMenu();
+  document.getElementById('chat-file').click();
+}
+
+let _serverAtt = [];
+async function openServerAtt() {
+  _closeAttachMenu();
+  const panel = document.getElementById('att-server-panel');
+  const list  = document.getElementById('att-server-list');
+  panel.style.display = '';
+  list.innerHTML = `<div class="placeholder-text">${t('loading')}</div>`;
+  try {
+    _serverAtt = (await (await fetch('/vyrii/attach/list')).json()).files || [];
+  } catch (e) {
+    _serverAtt = [];
+  }
+  renderServerAtt();
+  document.getElementById('att-server-filter').focus();
+}
+
+function closeServerAtt() {
+  document.getElementById('att-server-panel').style.display = 'none';
+}
+
+function _fmtSize(n) {
+  return n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(0) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
+}
+
+function renderServerAtt() {
+  const list = document.getElementById('att-server-list');
+  const q = (document.getElementById('att-server-filter').value || '').trim().toLowerCase();
+  const files = _serverAtt.filter(f => !q || f.name.toLowerCase().includes(q));
+  if (!files.length) {
+    list.innerHTML = `<div class="placeholder-text">${t('att_server_empty')}</div>`;
+    return;
+  }
+  const picked = new Set(state.pendingAtt.map(a => a.path));
+  list.innerHTML = files.map(f => `
+    <div class="att-server-item${picked.has(f.path) ? ' picked' : ''}"
+         onclick="pickServerAtt(${_serverAtt.indexOf(f)})" title="${escHtml(f.path)}">
+      ${f.kind === 'image' ? `<img class="att-thumb" data-att="${escHtml(f.path)}" alt="">` : '<span>&#128196;</span>'}
+      <span class="att-name">${escHtml(f.name)}</span>
+      <span class="att-meta">${_fmtSize(f.size)} · ${new Date(f.mtime * 1000).toLocaleString()}</span>
+    </div>`).join('');
+  _loadAttThumbs(list);
+}
+
+async function pickServerAtt(i) {
+  const f = _serverAtt[i];
+  if (!f || state.pendingAtt.some(a => a.path === f.path)) return;
+  const chk = await _checkAtt(f.path);
+  if (!chk.ok) { showToast(t('att_unread') + f.name + ' — ' + chk.error, 8000); return; }
+  state.pendingAtt.push({ path: f.path, name: f.name, kind: chk.kind || f.kind });
+  renderPendingAtt();
+  renderServerAtt();
+}
+
+function removePendingAtt(i) {
+  state.pendingAtt.splice(i, 1);
+  renderPendingAtt();
+}
+
+function renderPendingAtt() {
+  const box = document.getElementById('chat-attach-list');
+  if (!box) return;
+  box.style.display = state.pendingAtt.length ? '' : 'none';
+  box.innerHTML = state.pendingAtt.map((a, i) => `
+    <span class="att-chip${a.uploading ? ' att-uploading' : ''}">
+      ${a.kind === 'image' && a.path ? `<img class="att-thumb" data-att="${escHtml(a.path)}" alt="">`
+        : (a.kind === 'image' ? '&#128444;' : '&#128196;')}
+      <span class="att-name">${escHtml(a.name)}</span>
+      ${a.uploading ? '<span class="att-spin">…</span>'
+        : `<button class="att-x" onclick="removePendingAtt(${i})" title="${t('delete_msg')}">✕</button>`}
+    </span>`).join('');
+  _loadAttThumbs(box);
+}
+
+function _attHtml(msg) {
+  const atts = msg.meta?.attachments;
+  if (!atts?.length) return '';
+  return '<div class="att-row">' + atts.map(a => a.kind === 'image'
+    ? `<img class="att-img" data-att="${escHtml(a.path)}" alt="${escHtml(a.name)}" title="${escHtml(a.name)}">`
+    : `<span class="att-chip" title="${escHtml(a.path)}">&#128196; <span class="att-name">${escHtml(a.name)}</span></span>`
+  ).join('') + '</div>';
+}
+
+// <img src> sends no Authorization header, so images come through fetch (which
+// carries the stored credentials) as blob URLs, cached per path.
+const _attUrls = new Map();
+function _loadAttThumbs(root) {
+  root.querySelectorAll('img[data-att]').forEach(async img => {
+    const path = img.dataset.att;
+    try {
+      let url = _attUrls.get(path);
+      if (!url) {
+        const res = await fetch('/vyrii/files/raw?path=' + encodeURIComponent(path));
+        if (!res.ok) throw new Error(res.status);
+        url = URL.createObjectURL(await res.blob());
+        _attUrls.set(path, url);
+      }
+      img.src = url;
+      img.onclick = () => window.open(url, '_blank');
+    } catch {
+      img.replaceWith(Object.assign(document.createElement('span'),
+        { className: 'att-chip', textContent: '🖼 ' + path.split('/').pop() + ' — ' + t('att_missing') }));
+    }
+  });
+}
+
+async function _warnIfNoVision(model) {
+  try {
+    const d = await (await fetch('/vyrii/model/caps?model=' + encodeURIComponent(model))).json();
+    if (d.vision === false) showToast(t('att_no_vision'), 6000);
+  } catch { /* unknown — send anyway */ }
+}
+
+function _initAttachDrop() {
+  const area  = document.querySelector('#tab-chat .chat-main');
+  const input = document.getElementById('chat-input');
+  if (!area || !input) return;
+  area.addEventListener('dragover', e => {
+    if (e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); area.classList.add('att-drop'); }
+  });
+  area.addEventListener('dragleave', e => {
+    if (!area.contains(e.relatedTarget)) area.classList.remove('att-drop');
+  });
+  area.addEventListener('drop', e => {
+    area.classList.remove('att-drop');
+    if (!e.dataTransfer?.files?.length) return;
+    e.preventDefault();
+    attachFiles(e.dataTransfer.files);
+  });
+  // a pasted screenshot has no name of its own (or always "image.png") — give it one
+  input.addEventListener('paste', e => {
+    const files = Array.from(e.clipboardData?.items || [])
+      .filter(it => it.kind === 'file').map(it => it.getAsFile()).filter(Boolean);
+    if (!files.length) return;
+    e.preventDefault();
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
+    attachFiles(files.map((f, i) => {
+      const ext = (f.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+      const num = files.length > 1 ? '-' + (i + 1) : '';
+      return new File([f], `paste-${stamp}${num}.${ext}`, { type: f.type });
+    }));
+  });
+}
+document.addEventListener('DOMContentLoaded', _initAttachDrop);
 
 // ── TRANSLATE ─────────────────────────────────────────
 function swapLangs() {

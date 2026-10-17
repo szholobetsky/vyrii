@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vyrii"
-version = "0.1.25"
+version = "0.1.26"
 description = "Local AI web UI — chat, translate, web research, deep document generation, RAG, and file management via Gradio. Powered by Ollama or any OpenAI-compatible backend."
 requires-python = ">=3.10"
 readme = {file = "README.md", content-type = "text/markdown"}
@@ -21,8 +21,12 @@ gradio = ["gradio>=6.0"]
 api    = ["fastapi>=0.110", "uvicorn>=0.29", "python-multipart>=0.0.9"]
 web    = ["lxml>=4.9"]	
 html   = ["lxml>=4.9", "lxml_html_clean"]
+# chat attachments: PDF text (pypdf), shrinking / converting images (Pillow);
+# text, docx, xlsx and pptx need nothing extra
+docs   = ["pypdf>=4.0", "pillow>=10.0"]
 full   = ["gradio>=6.0", "lxml>=4.9", "lxml_html_clean",
-          "fastapi>=0.110", "uvicorn>=0.29", "python-multipart>=0.0.9"]
+          "fastapi>=0.110", "uvicorn>=0.29", "python-multipart>=0.0.9",
+          "pypdf>=4.0", "pillow>=10.0"]
 
 [project.urls]
 Homepage   = "https://github.com/szholobetsky/vyrii"

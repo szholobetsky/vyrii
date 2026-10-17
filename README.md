@@ -25,6 +25,17 @@ Streaming conversation with a local LLM. Supports multiple saved sessions, conte
 
 Chat history is saved automatically to `~/.vyrii/history.db` and exported as markdown to `~/.vyrii/ctx/`. This applies to both the Gradio UI and the lightweight HTML UI.
 
+**Attachments.** The 📎 button (or drag and drop, or pasting a screenshot) attaches files to a message. They are uploaded to `~/.vyrii/input/`, never overwriting a file of the same name, and the chat keeps only their paths, so the history stays small. On every send the server reads them again:
+
+| File | What the model gets |
+|---|---|
+| text, code, markdown, csv | the text |
+| Word `.docx`, Excel `.xlsx`, PowerPoint `.pptx` | the text (paragraphs, tables as `\| a \| b \|`, sheets, slides) — no extra package |
+| PDF | the text of every page — needs `pip install 'vyrii[docs]'`; a scan without a text layer is reported as such |
+| images (png, jpg, webp, gif, bmp) | the image itself, for a vision model (e.g. `gemma3:4b`, `qwen2.5vl:3b`, `granite3.2-vision`, `moondream`) |
+
+A document longer than 60 000 characters is cut, with a note to the model. The chat warns when the selected model does not see images (Ollama reports it in `/api/show`). With `vyrii[docs]` (Pillow) large images are shrunk to 1280 px and converted to PNG/JPEG before they are sent; without it they go as they are. vyrii only reads files and images — it does not generate them.
+
 ### Translate
 On-the-fly translation in four modes:
 
@@ -192,6 +203,7 @@ Optional extras:
 - `pip install 'vyrii[api]'` — FastAPI server (`--api`)
 - `pip install 'vyrii[web]'` — web crawl and HTML extraction (lxml)
 - `pip install 'vyrii[html]'` — cleaner HTML extraction (lxml + lxml_html_clean)
+- `pip install 'vyrii[docs]'` — PDF attachments in the chat (pypdf) and image shrinking (Pillow)
 - `pip install 'vyrii[full]'` — everything above
 - `pip install simargl` — RAG and WebIndex
 - `pip install argostranslate` — offline translation mini mode
@@ -271,7 +283,7 @@ Static UI files at `/ui/` are always served without auth so the login page loads
 The following endpoints are available in all server modes (Flask default, `--api` FastAPI):
 
 - `GET  /v1/models` — list available models
-- `POST /v1/chat/completions` — OpenAI-compatible chat (streaming + non-streaming)
+- `POST /v1/chat/completions` — OpenAI-compatible chat (streaming + non-streaming). Flask also takes `"attachments": ["input/report.pdf", …]` in a message (paths under `~/.vyrii`), `"images": [base64, …]` and OpenAI `image_url` parts with a `data:` URL
 - `POST /vyrii/translate`
 - `POST /vyrii/webask`
 - `POST /vyrii/webcrawl`
@@ -279,7 +291,9 @@ The following endpoints are available in all server modes (Flask default, `--api
 - `POST /vyrii/webanalys`
 - `GET  /vyrii/files/list`
 - `POST /vyrii/files/mkdir`
-- `POST /vyrii/files/upload`
+- `POST /vyrii/files/upload` — `?dest=input&unique=1` never overwrites (the chat's attachments)
+- `GET  /vyrii/files/raw?path=…` — the file itself (Flask)
+- `GET  /vyrii/model/caps?model=…` — `{"vision": true|false|null}` (Flask; null = unknown)
 - `DELETE /vyrii/files`
 - `POST /vyrii/files/index`
 

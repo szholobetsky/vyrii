@@ -77,32 +77,96 @@ def estimate_tokens(text: str) -> int:
     return max(1, len(text) // 3)
 
 
+# What one image costs a vision model, roughly (gemma3 256, llava 576,
+# qwen2.5vl up to ~2000 at 1280 px) — enough for smart_ctx to grow the window.
+IMAGE_TOKENS = 1024
+
+
 def smart_ctx(messages: list[dict], current: int = CTX_START) -> int:
-    total = sum(estimate_tokens(str(m.get("content", ""))) for m in messages)
+    total = sum(estimate_tokens(str(m.get("content", "")))
+                + IMAGE_TOKENS * len(m.get("images") or []) for m in messages)
     while total >= int(current * _CTX_FILL):
         current += CTX_STEP
     return current
 
 
+def _data_url_b64(url: str) -> str | None:
+    """'data:image/png;base64,AAAA' -> 'AAAA' (None for an http link: a local model cannot fetch it)."""
+    if isinstance(url, str) and url.startswith("data:") and ";base64," in url:
+        return url.split(";base64,", 1)[1]
+    return None
+
+
 def _clean_messages(messages: list[dict]) -> list[dict]:
+    """Messages as {role, content[, images]}: content is plain text, images is a
+    list of base64 strings (Ollama's field). OpenAI-style image_url parts with a
+    data: URL become images too; anything else in a list content becomes text."""
     result = []
     for m in messages:
         role = m.get("role", "")
         content = m.get("content", "")
+        images = [x for x in (m.get("images") or []) if isinstance(x, str) and x]
         # Gradio 6 may return content as a list of blocks: [{"type":"text","text":"..."}]
         if isinstance(content, list):
             parts = []
             for item in content:
                 if isinstance(item, dict):
+                    if item.get("type") == "image_url":
+                        iu = item.get("image_url")
+                        b64 = _data_url_b64(iu.get("url") if isinstance(iu, dict) else iu)
+                        if b64:
+                            images.append(b64)
+                        continue
                     parts.append(item.get("text") or item.get("content") or "")
                 else:
                     parts.append(str(item))
             content = "\n".join(p for p in parts if p)
         elif not isinstance(content, str):
             content = str(content)
-        if role in ("user", "assistant", "system") and content:
-            result.append({"role": role, "content": content})
+        if role in ("user", "assistant", "system") and (content or images):
+            msg = {"role": role, "content": content}
+            if images:
+                msg["images"] = images
+            result.append(msg)
     return result
+
+
+def _image_mime(b64: str) -> str:
+    for prefix, mime in (("iVBOR", "image/png"), ("/9j/", "image/jpeg"),
+                         ("R0lG", "image/gif"), ("UklG", "image/webp"), ("Qk", "image/bmp")):
+        if b64.startswith(prefix):
+            return mime
+    return "image/png"
+
+
+def _openai_messages(clean: list[dict]) -> list[dict]:
+    """images -> content parts [{type:text}, {type:image_url, data: URL}]."""
+    out = []
+    for m in clean:
+        if not m.get("images"):
+            out.append(m)
+            continue
+        parts = [{"type": "text", "text": m["content"]}] if m["content"] else []
+        for b64 in m["images"]:
+            parts.append({"type": "image_url",
+                          "image_url": {"url": f"data:{_image_mime(b64)};base64,{b64}"}})
+        out.append({"role": m["role"], "content": parts})
+    return out
+
+
+def model_capabilities(model: str, base_url: str = DEFAULT_OLLAMA,
+                       backend: str = BACKEND_OLLAMA) -> list[str] | None:
+    """What Ollama says the model can do (e.g. ['completion', 'vision']).
+    None when it is unknown: an OpenAI-compatible server, an old Ollama, no answer."""
+    if backend != BACKEND_OLLAMA or not model:
+        return None
+    try:
+        r = requests.post(f"{base_url}/api/show", json={"model": model}, timeout=10)
+        r.raise_for_status()
+        caps = r.json().get("capabilities")
+        return list(caps) if isinstance(caps, list) else None
+    except Exception:
+        return None
 
 
 def stream_chat(
@@ -184,7 +248,7 @@ def _stream_openai(clean, model, base_url, timeout=180, options=None, raise_erro
     url = f"{base_url}/v1/chat/completions"
     payload = {
         "model": model,
-        "messages": clean,
+        "messages": _openai_messages(clean),
         "stream": True,
     }
     if options:

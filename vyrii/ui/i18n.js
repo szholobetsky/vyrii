@@ -1,5 +1,7 @@
 const I18N = {
   en: {
+    att_from_pc: "From this computer", att_from_server: "Uploaded earlier", att_filter_ph: "Filter…", att_server_empty: "No files uploaded yet", att_unread: "File not read: ",
+    attach_title: 'Attach files (text, PDF, Word, Excel, PowerPoint, images)', att_wait: 'Wait until the files are uploaded', att_failed: 'Upload failed: ', att_no_vision: 'This model does not see images — pick a vision model (e.g. gemma3, qwen2.5vl, moondream)', att_missing: 'file not found',
     logo: 'V Y R I I', tagline: 'local AI tools',
     tab_chat: 'Chat', tab_translate: 'Translate', tab_obfuscate: 'Obfuscate',
     tab_files: 'Files', tab_webcrawl: 'WebCrawl', tab_webanalys: 'WebAnalys',
@@ -190,6 +192,8 @@ const I18N = {
     role_warn_cut: 'Role "{name}" is ~{actual} tokens but autocut\'s "first" budget is only {first} — it may get cut mid-chat. Raise autocut_first in Settings or shorten the role.',
   },
   uk: {
+    att_from_pc: "З комп'ютера", att_from_server: "Закачані раніше", att_filter_ph: "Фільтр…", att_server_empty: "Ще немає закачаних файлів", att_unread: "Файл не прочитано: ",
+    attach_title: 'Додати файли (текст, PDF, Word, Excel, PowerPoint, картинки)', att_wait: 'Зачекай, файли ще закачуються', att_failed: 'Не вдалося закачати: ', att_no_vision: 'Ця модель не бачить картинок — обери vision-модель (напр. gemma3, qwen2.5vl, moondream)', att_missing: 'файл не знайдено',
     logo: 'В И Р І Й', tagline: 'локальні ШІ інструменти',
     tab_chat: 'Чат', tab_translate: 'Переклад', tab_obfuscate: 'Обфускація',
     tab_files: 'Файли', tab_webcrawl: 'ВебКраулер', tab_webanalys: 'ВебАналіз',
@@ -372,6 +376,8 @@ const I18N = {
     role_warn_cut: 'Роль "{name}" займає ~{actual} токенів, а бюджет autocut "first" — лише {first} — її може вирізати посеред чату. Збільшіть autocut_first у Налаштуваннях або скоротіть роль.',
   },
   de: {
+    att_from_pc: "Von diesem Computer", att_from_server: "Früher hochgeladen", att_filter_ph: "Filter…", att_server_empty: "Noch keine Dateien hochgeladen", att_unread: "Datei nicht gelesen: ",
+    attach_title: 'Dateien anhängen (Text, PDF, Word, Excel, PowerPoint, Bilder)', att_wait: 'Warte, bis die Dateien hochgeladen sind', att_failed: 'Hochladen fehlgeschlagen: ', att_no_vision: 'Dieses Modell sieht keine Bilder — wähle ein Vision-Modell (z. B. gemma3, qwen2.5vl, moondream)', att_missing: 'Datei nicht gefunden',
     logo: 'V Y R I I', tagline: 'lokale KI-Werkzeuge',
     tab_chat: 'Chat', tab_translate: 'Übersetzen', tab_obfuscate: 'Verschleiern',
     tab_files: 'Dateien', tab_webcrawl: 'WebCrawl', tab_webanalys: 'WebAnalyse',
@@ -536,6 +542,8 @@ const I18N = {
     role_warn_cut: 'Rolle "{name}" hat ~{actual} Token, aber das Autocut-"first"-Budget beträgt nur {first} — sie könnte mitten im Chat abgeschnitten werden. Erhöhe autocut_first in den Einstellungen oder kürze die Rolle.',
   },
   fr: {
+    att_from_pc: "Depuis cet ordinateur", att_from_server: "Envoyés auparavant", att_filter_ph: "Filtrer…", att_server_empty: "Aucun fichier envoyé", att_unread: "Fichier non lu : ",
+    attach_title: 'Joindre des fichiers (texte, PDF, Word, Excel, PowerPoint, images)', att_wait: 'Attendez la fin de l’envoi des fichiers', att_failed: 'Échec de l’envoi : ', att_no_vision: 'Ce modèle ne voit pas les images — choisissez un modèle vision (ex. gemma3, qwen2.5vl, moondream)', att_missing: 'fichier introuvable',
     logo: 'V Y R I I', tagline: 'outils IA locaux',
     tab_chat: 'Chat', tab_translate: 'Traduction', tab_obfuscate: 'Obfuscation',
     tab_files: 'Fichiers', tab_webcrawl: 'WebCrawl', tab_webanalys: 'WebAnalyse',
@@ -695,6 +703,8 @@ const I18N = {
     role_warn_cut: 'Le rôle "{name}" fait ~{actual} jetons mais le budget "first" d\'autocut n\'est que de {first} — il risque d\'être coupé en cours de conversation. Augmentez autocut_first dans les Paramètres ou raccourcissez le rôle.',
   },
   es: {
+    att_from_pc: "Desde este equipo", att_from_server: "Subidos antes", att_filter_ph: "Filtrar…", att_server_empty: "Aún no hay archivos subidos", att_unread: "Archivo no leído: ",
+    attach_title: 'Adjuntar archivos (texto, PDF, Word, Excel, PowerPoint, imágenes)', att_wait: 'Espera a que se suban los archivos', att_failed: 'Error al subir: ', att_no_vision: 'Este modelo no ve imágenes — elige un modelo de visión (p. ej. gemma3, qwen2.5vl, moondream)', att_missing: 'archivo no encontrado',
     logo: 'V Y R I I', tagline: 'herramientas IA locales',
     tab_chat: 'Chat', tab_translate: 'Traducir', tab_obfuscate: 'Ofuscar',
     tab_files: 'Archivos', tab_webcrawl: 'WebCrawl', tab_webanalys: 'WebAnálisis',
@@ -854,6 +864,8 @@ const I18N = {
     role_warn_cut: 'El rol "{name}" tiene ~{actual} tokens pero el presupuesto "first" de autocut es solo {first} — podría cortarse a mitad del chat. Aumenta autocut_first en Ajustes o acorta el rol.',
   },
   pt: {
+    att_from_pc: "Deste computador", att_from_server: "Enviados antes", att_filter_ph: "Filtrar…", att_server_empty: "Nenhum arquivo enviado ainda", att_unread: "Arquivo não lido: ",
+    attach_title: 'Anexar arquivos (texto, PDF, Word, Excel, PowerPoint, imagens)', att_wait: 'Aguarde o envio dos arquivos', att_failed: 'Falha no envio: ', att_no_vision: 'Este modelo não vê imagens — escolha um modelo de visão (ex. gemma3, qwen2.5vl, moondream)', att_missing: 'arquivo não encontrado',
     logo: 'V Y R I I', tagline: 'ferramentas de IA locais',
     tab_chat: 'Chat', tab_translate: 'Traduzir', tab_obfuscate: 'Ofuscar',
     tab_files: 'Arquivos', tab_webcrawl: 'WebCrawl', tab_webanalys: 'WebAnálise',
