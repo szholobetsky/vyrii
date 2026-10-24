@@ -112,6 +112,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   loadThemes();
   setupTabNav();
   loadTools();
+  waLoadEngines();
 
   // Shift+Enter submits on all tabs (find nearest btn-primary in same panel)
   document.addEventListener('keydown', e => {
@@ -385,6 +386,7 @@ function switchTab(tab) {
   }
   if (tab === 'rag')      ragRefreshProjects();
   if (tab === 'settings') { loadSettings(); loadTools(); }
+  if (tab === 'webask')   waLoadEngines();
   if (tab === 'profile')   profileLoad();
   if (tab === 'team')      teamLoadProfiles();
   if (tab === 'scheduler') schRefresh();
@@ -415,8 +417,14 @@ function md(text) {
 
   // Step 0 — extract math blocks before anything else (LaTeX / KaTeX)
   const mathBlocks = [];
+  // display math: ```math fence (GitHub/GitLab style)
+  let s = text.replace(/^[ \t]*```math[ \t]*\n([\s\S]*?)\n[ \t]*```[ \t]*$/gm, (m, a) => {
+    const idx = mathBlocks.length;
+    mathBlocks.push({ display: true, tex: a.trim() });
+    return `\x00MB${idx}\x00`;
+  });
   // display math: $$ ... $$ or \[ ... \]
-  let s = text.replace(/\$\$([\s\S]*?)\$\$|\\\[([\s\S]*?)\\\]/g, (m, a, b) => {
+  s = s.replace(/\$\$([\s\S]*?)\$\$|\\\[([\s\S]*?)\\\]/g, (m, a, b) => {
     const idx = mathBlocks.length;
     mathBlocks.push({ display: true, tex: (a ?? b).trim() });
     return `\x00MB${idx}\x00`;
@@ -1400,6 +1408,60 @@ async function runTranslate() {
 }
 
 // ── WEBASK ────────────────────────────────────────────
+// The search engine is chosen here and saved on the server (config.json "search");
+// WebAnalys, DeepAgent and every flow with a web search use the same choice.
+let _waEngines = [];
+
+async function waLoadEngines() {
+  try {
+    const data = await (await fetch('/vyrii/search/engines')).json();
+    _waEngines = data.engines || [];
+    const sel = document.getElementById('wa-engine');
+    sel.innerHTML = _waEngines.map(e =>
+      `<option value="${e.name}">${e.name} — ${e.label}${e.missing ? ' (' + e.missing + ')' : ''}</option>`).join('');
+    sel.value = data.default || 'ddg';
+    waEngineChanged(false);
+  } catch (e) { /* older server: no selector */ }
+}
+
+function waEngineChanged(save = true) {
+  const name = document.getElementById('wa-engine').value;
+  const eng  = _waEngines.find(e => e.name === name) || {};
+  const wrap = document.getElementById('wa-engine-opt-wrap');
+  const inp  = document.getElementById('wa-engine-opt');
+  const hint = document.getElementById('wa-engine-hint');
+  if (eng.needs) {
+    wrap.style.display = 'flex';
+    document.getElementById('wa-engine-opt-label').textContent =
+      t(eng.needs === 'key' ? 'wa_engine_needs_key' : 'wa_engine_needs_url');
+    inp.type  = eng.needs === 'key' ? 'password' : 'url';
+    inp.value = eng.needs === 'url' ? (eng.url || '') : '';
+    inp.placeholder = eng.needs === 'key' ? (eng.has_key ? '••••••••' : '') : 'http://localhost:8888';
+  } else {
+    wrap.style.display = 'none';
+  }
+  hint.textContent = eng.missing ? `${name}: ${t('wa_engine_missing')}` : t('wa_engine_hint');
+  if (save && !eng.missing) waEngineSave();
+}
+
+async function waEngineSave() {
+  const name = document.getElementById('wa-engine').value;
+  const eng  = _waEngines.find(e => e.name === name) || {};
+  const body = { engine: name };
+  const v = document.getElementById('wa-engine-opt').value.trim();
+  if (eng.needs && v) body[eng.needs] = v;
+  try {
+    const data = await (await fetch('/vyrii/search/engine', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    })).json();
+    if (data.error) { showToast(data.error); return; }
+    await waLoadEngines();
+    document.getElementById('wa-engine').value = data.ok ? data.default : name;
+    waEngineChanged(false);
+    if (data.ok) showToast(t('wa_engine_saved') + data.default);
+  } catch (e) { showToast(t('error_prefix') + e.message); }
+}
+
 async function runWebAsk() {
   const question = document.getElementById('wa-question').value.trim();
   if (!question) return;

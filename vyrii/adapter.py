@@ -2,7 +2,7 @@
 
 Flows expect a `chat` object with:
   chat._stream_chat(messages)   → str
-  chat._web_ddg_search(q, n)    → [(title, url, snippet), ...]
+  chat._web_ddg_search(q, n)    → [(title, url, snippet), ...]  (the WebAsk engine)
   chat._web_strip_html(bytes)   → str
   chat._sep(label)              → None  (display separator, no-op here)
   chat._role                    → str   (system prompt)
@@ -73,6 +73,17 @@ def stream_flow_lines(run_fn):
         text = item.rstrip('\n')
         if text.strip():
             yield text
+
+
+def load_search_settings() -> dict:
+    """The "search" block of ~/.vyrii/config.json: {"default": ..., "engines": {...}}."""
+    import json, pathlib
+    try:
+        cfg = json.loads((pathlib.Path.home() / ".vyrii" / "config.json").read_text(encoding="utf-8"))
+        s = cfg.get("search")
+        return s if isinstance(s, dict) else {}
+    except Exception:
+        return {}
 
 
 class ChatAdapter:
@@ -166,46 +177,12 @@ class ChatAdapter:
         return "\n".join(p.out)
 
     @staticmethod
-    def _web_ddg_search(term: str, n: int = 8) -> list[tuple[str, str, str]]:
-        from html.parser import HTMLParser
-        from urllib.parse import parse_qs, urlparse, unquote
+    def _web_search(term: str, n: int = 8, engine: str | None = None) -> list[tuple[str, str, str]]:
+        """(title, url, snippet) from the engine chosen on the WebAsk page
+        (~/.vyrii/config.json → "search"; DuckDuckGo unless changed).
+        Raises websearch.SearchError — a blocked engine says so, not "no results"."""
+        from . import websearch
+        return websearch.search(term, n, load_search_settings(), engine=engine)
 
-        class _DDG(HTMLParser):
-            def __init__(self):
-                super().__init__(); self.results = []; self._cur = {}; self._in = None
-            def handle_starttag(self, tag, attrs):
-                d = dict(attrs); cls = d.get("class", "")
-                if tag == "a" and "result__a" in cls:
-                    href = d.get("href", "")
-                    try:
-                        params = parse_qs(urlparse(href).query)
-                        url = params.get("uddg", [""])[0] or unquote(href)
-                    except Exception:
-                        url = href
-                    self._cur["url"] = url; self._in = "title"
-                elif tag == "a" and "result__snippet" in cls:
-                    self._in = "snippet"
-            def handle_endtag(self, tag):
-                if self._in and tag == "a":
-                    if "url" in self._cur and "title" in self._cur:
-                        self.results.append((
-                            self._cur.get("title", ""),
-                            self._cur.get("url", ""),
-                            self._cur.get("snippet", ""),
-                        ))
-                        self._cur = {}
-                    self._in = None
-            def handle_data(self, data):
-                if self._in == "title":
-                    self._cur["title"] = self._cur.get("title", "") + data
-                elif self._in == "snippet":
-                    self._cur["snippet"] = self._cur.get("snippet", "") + data
-
-        resp = _requests.post(
-            "https://html.duckduckgo.com/html/",
-            data={"q": term},
-            headers={"User-Agent": "Mozilla/5.0"},
-            timeout=15,
-        )
-        p = _DDG(); p.feed(resp.text)
-        return p.results[:n]
+    # flows call this name (webask, webanalys, deepagent_md) — it follows the WebAsk choice too
+    _web_ddg_search = _web_search

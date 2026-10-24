@@ -372,6 +372,51 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         return jsonify({"result": complete([{"role": "user", "content": prompt}],
                                            model, use_url, backend=use_bk, timeout=timeout)})
 
+    def _run_flow_log(run, adapter, args) -> str:
+        """Run a flow and keep what it printed: when it ends without a reply
+        (search blocked, no pages fetched) the page shows why, not "No results"."""
+        import io, contextlib
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            run(adapter, args)
+        return buf.getvalue().strip()
+
+    # ── /vyrii/search — the web search engine, chosen on the WebAsk page ─────
+    # stored in config.json "search"; every page and flow with a web search uses it
+
+    @app.route("/vyrii/search/engines", methods=["GET"])
+    def search_engines():
+        from . import websearch as _ws
+        from .adapter import load_search_settings
+        st = load_search_settings()
+        engines = []
+        for name, (label, need) in _ws.ENGINES.items():
+            opts = _ws.engine_options(st, name)
+            engines.append({"name": name, "label": label, "needs": need,
+                            "missing": _ws.missing(st, name),
+                            "url": opts.get("url", "") if need == "url" else "",
+                            "has_key": bool(str(opts.get("key") or "").strip())})
+        return jsonify({"default": _ws.default_engine(st), "engines": engines})
+
+    @app.route("/vyrii/search/engine", methods=["POST"])
+    def search_engine_save():
+        from . import websearch as _ws
+        from .adapter import load_search_settings
+        body = request.get_json(silent=True) or {}
+        name = _ws.resolve_engine(str(body.get("engine", "")))
+        if not name:
+            return jsonify({"error": f"unknown engine — known: {', '.join(_ws.ENGINES)}"}), 400
+        st = load_search_settings()
+        for k in ("key", "url"):
+            v = str(body.get(k) or "").strip()
+            if v:
+                st.setdefault("engines", {}).setdefault(name, {})[k] = v
+        gap = _ws.missing(st, name)
+        if not gap:
+            st["default"] = name
+        _write_cfg({"search": st})
+        return jsonify({"ok": not gap, "default": _ws.default_engine(st), "missing": gap})
+
     # ── /vyrii/webask ─────────────────────────────────────────────────────────
 
     @app.route("/vyrii/webask", methods=["POST"])
@@ -399,8 +444,8 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
                               model, base_url, backend=backend, timeout=timeout)
             return jsonify({"result": answer, "context": f"{prompt}\n\n---\n\nAnswer:\n{answer}"})
         adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
-        _wf.run(adapter, f"{question} -d {top_n}")
-        return jsonify({"result": adapter.last_reply or "No results.", "context": adapter.full_context()})
+        log = _run_flow_log(_wf.run, adapter, f"{question} -d {top_n}")
+        return jsonify({"result": adapter.last_reply or log or "No results.", "context": adapter.full_context()})
 
     # ── /vyrii/webcrawl ───────────────────────────────────────────────────────
 
@@ -513,8 +558,8 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         if not query:
             return jsonify({"error": "query is required"})
         adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
-        _waf.run(adapter, f'"{query}" -n {n}')
-        return jsonify({"result": adapter.last_reply or "No results.", "context": adapter.full_context()})
+        log = _run_flow_log(_waf.run, adapter, f'"{query}" -n {n}')
+        return jsonify({"result": adapter.last_reply or log or "No results.", "context": adapter.full_context()})
 
     # ── /vyrii/scan ───────────────────────────────────────────────────────────
 

@@ -2257,9 +2257,13 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                         yield answer, full, src, ""
                         return
 
-                    # ── DDG search mode ────────────────────────────────────────
+                    # ── web search mode (the engine chosen on WebAsk) ──────────
                     yield "_Searching the web..._", "", "", ""
-                    results = adapter._web_ddg_search(question, int(top_n))
+                    try:
+                        results = adapter._web_ddg_search(question, int(top_n))
+                    except Exception as e:
+                        yield f"**Search failed:** {e}", "", "", ""
+                        return
                     if not results:
                         yield "_No search results found._", "", "", ""
                         return
@@ -2358,7 +2362,9 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                                           timeout=int(timeout))
                     n = int(n)
 
-                    yield f"Searching DuckDuckGo: **{query}**...\n\n"
+                    from .adapter import load_search_settings as _lss
+                    from . import websearch as _ws
+                    yield f"Searching ({_ws.default_engine(_lss())}): **{query}**...\n\n"
 
                     try:
                         results = adapter._web_ddg_search(query, n=n + 3)
@@ -2367,7 +2373,7 @@ def build_app(ollama_url: str = _DEFAULT_OLLAMA, openai_url: str = _DEFAULT_OPEN
                         return
 
                     if not results:
-                        yield "_No results from DuckDuckGo._"
+                        yield "_No search results._"
                         return
 
                     def _render(rated, status=""):
