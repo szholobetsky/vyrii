@@ -27,7 +27,7 @@ import time
 import uuid
 
 from flask import (
-    Flask, Response, jsonify, redirect,
+    Flask, Response, copy_current_request_context, jsonify, redirect,
     request, send_from_directory, stream_with_context,
 )
 from flask_cors import CORS
@@ -96,6 +96,62 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
 
     app = Flask(__name__, static_folder=None)
     CORS(app)
+
+    # ── network exposure: the start-up warning in the browser ─────────────────
+    # interfaces are looked up once per start, on the first call (PowerShell takes
+    # seconds; VYRII_BIND is set only after create_app returns)
+
+    _boot_id = f"{int(time.time())}"
+    _exposure: dict = {}
+    _exposure_lock = threading.Lock()
+
+    def _exposure_rows() -> list[dict]:
+        with _exposure_lock:
+            if "rows" not in _exposure:
+                from . import netinfo
+                try:
+                    _exposure["rows"] = netinfo.reachable(app.config.get("VYRII_BIND", "127.0.0.1"))
+                except Exception:
+                    _exposure["rows"] = []
+        return _exposure["rows"]
+
+    @app.route("/vyrii/system/exposure", methods=["GET"])
+    def system_exposure():
+        trusted = set(_read_cfg().get("trusted_ips") or [])
+        rows = [{**r, "trusted": r["ip"] in trusted} for r in _exposure_rows()]
+        port = request.host.rsplit(":", 1)[1] if ":" in request.host else ""
+        return jsonify({"auth": auth, "bind": app.config.get("VYRII_BIND", ""), "port": port,
+                        "boot": _boot_id, "addresses": rows, "trusted_ips": sorted(trusted),
+                        # vyrii does not guess: an address the person has not marked as a
+                        # private network warns; a new one (plugged into a router) warns again
+                        "warn": not auth and any(not r["trusted"] for r in rows)})
+
+    @app.route("/vyrii/system/trust", methods=["POST"])
+    def system_trust():
+        """{"ips": [...]} marks this machine's current addresses as a private network;
+        {"remove": ip} forgets one; {"clear": true} forgets them all."""
+        body = request.get_json(silent=True) or {}
+        if body.get("clear"):
+            _write_cfg({"trusted_ips": []})
+            return jsonify({"ok": True, "trusted_ips": []})
+        if body.get("remove"):
+            trusted = [ip for ip in _read_cfg().get("trusted_ips") or [] if ip != body["remove"]]
+            _write_cfg({"trusted_ips": trusted})
+            return jsonify({"ok": True, "trusted_ips": trusted})
+        current = {r["ip"] for r in _exposure_rows()}
+        ips = [ip for ip in body.get("ips") or [] if ip in current]
+        trusted = sorted(set(_read_cfg().get("trusted_ips") or []) | set(ips))
+        _write_cfg({"trusted_ips": trusted})
+        return jsonify({"ok": True, "trusted_ips": trusted})
+
+    # the Scheduler runs any shell command: only when vyrii asks for a password
+    @app.before_request
+    def _scheduler_needs_auth():
+        if not auth and request.path.startswith("/vyrii/scheduler"):
+            return jsonify({"error": "Scheduler needs a password: Settings → Authentication → "
+                                     "Require password, then restart vyrii.",
+                            "need_auth": True}), 403
+        return None
 
     # ── basic auth middleware ─────────────────────────────────────────────────
 
@@ -252,7 +308,53 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         "Chinese": "zh", "Japanese": "ja", "Arabic": "ar", "Auto": "auto",
     }
 
+    # ── live output for tool tabs ─────────────────────────────────────────────
+    # A route marked @_streamable answers as before; with {"stream": true} in the
+    # body it runs in a worker thread and sends SSE: {"type":"start"} when a model
+    # call begins, {"type":"token","text"} as the model writes, {"type":"log","text"}
+    # for the flow's progress lines, and {"type":"done","data": <the usual JSON>}.
+
+    import functools as _functools
+    import queue as _queue
+
+    def _streamable(view):
+        @_functools.wraps(view)
+        def wrapper(*args, **kwargs):
+            body = request.get_json(silent=True) or {}
+            if not body.get("stream"):
+                return view(*args, **kwargs)
+            from . import live
+            q: _queue.Queue = _queue.Queue()
+
+            @copy_current_request_context
+            def work():
+                data: dict
+                with live.capture(on_token=lambda t: q.put({"type": "token", "text": t}),
+                                  on_start=lambda: q.put({"type": "start"}),
+                                  on_log=lambda t: q.put({"type": "log", "text": t})):
+                    try:
+                        resp = app.make_response(view(*args, **kwargs))
+                        data = resp.get_json(silent=True)
+                        if data is None:
+                            data = {"result": resp.get_data(as_text=True)}
+                    except Exception as e:
+                        data = {"error": str(e)}
+                q.put({"type": "done", "data": data})
+
+            threading.Thread(target=work, daemon=True).start()
+
+            def gen():
+                while True:
+                    ev = q.get()
+                    yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+                    if ev["type"] == "done":
+                        break
+            return Response(stream_with_context(gen()), mimetype="text/event-stream",
+                            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+        return wrapper
+
     @app.route("/vyrii/translate", methods=["POST"])
+    @_streamable
     def translate():
         body = request.get_json(silent=True) or {}
         text      = body.get("text", "").strip()
@@ -375,11 +477,11 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
     def _run_flow_log(run, adapter, args) -> str:
         """Run a flow and keep what it printed: when it ends without a reply
         (search blocked, no pages fetched) the page shows why, not "No results"."""
-        import io, contextlib
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
+        from . import live
+        buf: list[str] = []
+        with live.capture(on_log=buf.append):
             run(adapter, args)
-        return buf.getvalue().strip()
+        return "".join(buf).strip()
 
     # ── /vyrii/search — the web search engine, chosen on the WebAsk page ─────
     # stored in config.json "search"; every page and flow with a web search uses it
@@ -420,6 +522,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
     # ── /vyrii/webask ─────────────────────────────────────────────────────────
 
     @app.route("/vyrii/webask", methods=["POST"])
+    @_streamable
     def webask():
         from .adapter import ChatAdapter
         from .flows import webask as _wf
@@ -450,6 +553,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
     # ── /vyrii/webcrawl ───────────────────────────────────────────────────────
 
     @app.route("/vyrii/webcrawl", methods=["POST"])
+    @_streamable
     def webcrawl():
         import tempfile as _tmp
         from .adapter import ChatAdapter
@@ -520,6 +624,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
     # ── /vyrii/deepagent ──────────────────────────────────────────────────────
 
     @app.route("/vyrii/deepagent", methods=["POST"])
+    @_streamable
     def deepagent():
         from .adapter import ChatAdapter
         from .flows import deepagent_md as _df
@@ -548,6 +653,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
     # ── /vyrii/webanalys ──────────────────────────────────────────────────────
 
     @app.route("/vyrii/webanalys", methods=["POST"])
+    @_streamable
     def webanalys():
         from .adapter import ChatAdapter
         from .flows import webanalys as _waf
@@ -564,6 +670,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
     # ── /vyrii/scan ───────────────────────────────────────────────────────────
 
     @app.route("/vyrii/scan", methods=["POST"])
+    @_streamable
     def scan_compact():
         from .adapter import ChatAdapter
         from .flows import scan as _sc
@@ -576,21 +683,44 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         target  = body.get("target", 8000)
         rounds  = body.get("rounds", 1)
         ext     = body.get("ext", "").strip()
+        mode    = body.get("mode", "").strip()
         if not path:
             return jsonify({"error": "path is required"})
+        if mode not in ("", "summary", "focus", "filter"):
+            return jsonify({"error": f"unknown mode: {mode}"})
+        if mode in ("focus", "filter") and not query:
+            return jsonify({"error": f"mode {mode} needs a query"})
+        # a relative path is one from Files (relative to ~/.vyrii), not to the folder vyrii started in
+        if not os.path.isabs(path):
+            try:
+                if _fsafe(path).exists():
+                    path = str(_fsafe(path))
+            except ValueError:
+                pass
+        if not os.path.exists(path):
+            return jsonify({"error": f"Not found: {path}"})
         adapter = ChatAdapter(model=model, base_url=base_url, backend=backend, timeout=timeout)
         args = f'"{path}"'
         if query:
             args += f' --query "{query}"'
+        if mode:
+            args += f' --mode {mode}'
         args += f' --chunk {chunk} --summary {summary} --target {target} --rounds {rounds}'
         if ext:
             args += f' --ext {ext}'
         _sc.run(adapter, args)
-        return jsonify({"result": adapter.last_reply or "Done.", "context": adapter.full_context()})
+        if not adapter.last_reply:
+            # nothing summarised — say why, not "Done."
+            if query and mode in ("", "filter"):
+                return jsonify({"error": f"Nothing in {path} is relevant to the query: {query}"})
+            return jsonify({"error": f"Nothing scanned in {path} — no files of the listed extensions, "
+                                     f"or they are empty"})
+        return jsonify({"result": adapter.last_reply, "context": adapter.full_context()})
 
     # ── /vyrii/webindex ───────────────────────────────────────────────────────
 
     @app.route("/vyrii/webindex", methods=["POST"])
+    @_streamable
     def webindex():
         from .adapter import ChatAdapter
         from .flows import webindex as _wi
@@ -736,13 +866,23 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         body = request.get_json(silent=True) or {}
         allowed = {"saved_url", "saved_model", "saved_backend", "lang",
                    "theme", "timeout", "worker_timeout", "active_profile",
-                   "reserve_mode", "reserve_timeout", "restart_cmd",
+                   "reserve_mode", "reserve_timeout", "restart_cmd", "port", "auth",
                    "ollama_kv_cache", "ollama_flash_attention",
                    "ollama_keep_alive", "ollama_max_loaded_models", "ollama_host",
                    "ollama_vulkan", "ollama_igpu_enable",
                    "autocut_enabled", "autocut_first", "autocut_last",
                    "autocut_limit", "autocut_algo"}
         updates = {k: v for k, v in body.items() if k in allowed and v is not None}
+        if "auth" in updates:
+            updates["auth"] = bool(updates["auth"])
+        if "port" in updates:
+            try:
+                port = int(updates["port"] or 0)
+            except (TypeError, ValueError):
+                return jsonify({"error": "port must be a number"}), 400
+            if port and not 1024 <= port <= 65535:
+                return jsonify({"error": "port must be 1024–65535 (empty = 5000)"}), 400
+            updates["port"] = port or ""
         try:
             _write_cfg(updates)
             return jsonify({"ok": True, "config": _read_cfg()})
@@ -755,8 +895,11 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
     # vice versa, no separate storage).
 
     _DEFAULT_TOOLS = [
-        {"name": "SIMARGL", "port": 7861},
-        {"name": "SVITOVYD", "port": 7860},
+        {"name": "SIMARGL", "port": 8099},
+        {"name": "SVITOVYD", "port": 8097},
+        {"name": "GAMAYUN", "port": 8095},
+        {"name": "MOKOSH", "port": 8093},
+        {"name": "ALKONOST", "port": 8090},
     ]
 
     def _valid_tool(name, port):
@@ -1013,6 +1156,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         return jsonify({"results": results, "context": "\n\n".join(ctx_parts), "sources": sources})
 
     @app.route("/vyrii/rag/ask", methods=["POST"])
+    @_streamable
     def rag_ask():
         body  = request.get_json(silent=True) or {}
         model = body.get("model", "") or _default_model()
@@ -1044,12 +1188,34 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
             raise ValueError("Path outside ~/.vyrii/")
         return p
 
+    # vyrii's own state in the root of ~/.vyrii: Files may show it, never write or delete it
+    # (an uploaded config.json would change the login, a scheduler.json the commands it runs,
+    # a processes.json the pid that Stop kills)
+    _FPROTECTED_FILES = {"config.json", "scheduler.json", "process_tools.json"}
+    _FPROTECTED_DIRS  = {"process", "scheduler_logs"}
+
+    def _fwritable(rel: str) -> pathlib.Path:
+        p = _fsafe(rel)
+        parts = p.relative_to(_FHOME.resolve()).parts
+        if not parts:
+            raise ValueError("~/.vyrii itself cannot be changed here")
+        if parts[0] in _FPROTECTED_DIRS or (len(parts) == 1 and (
+                parts[0] in _FPROTECTED_FILES or parts[0].startswith("history.db"))):
+            raise ValueError(f"{parts[0]} belongs to vyrii itself — not writable from Files")
+        # .git is written by git alone: hooks and config there run programs on the next pull
+        if any(x.lower() == ".git" for x in parts):
+            raise ValueError(".git is written by git only — not from Files")
+        return p
+
     def _flist(root: pathlib.Path, depth: int = 0, max_depth: int = 6) -> dict:
         if not root.is_dir() or depth > max_depth:
             return {}
         result = {}
         for item in sorted(root.iterdir(), key=lambda x: (x.is_file(), x.name)):
             key = item.name + ("/" if item.is_dir() else "")
+            if item.name == ".git" and item.is_dir():
+                result[key] = {}            # a repository: shown, its objects not listed
+                continue
             result[key] = _flist(item, depth + 1, max_depth) if item.is_dir() else None
         return result
 
@@ -1092,7 +1258,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
     def files_mkdir():
         body = request.get_json(silent=True) or {}
         try:
-            _fsafe(body.get("path", "")).mkdir(parents=True, exist_ok=True)
+            _fwritable(body.get("path", "")).mkdir(parents=True, exist_ok=True)
             return jsonify({"ok": True, "path": body.get("path", "")})
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
@@ -1120,7 +1286,7 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
             try:
                 fname = f.filename or "upload"
                 rel   = (dest.rstrip("/\\") + "/" + fname) if dest.strip() else fname
-                target = _fsafe(rel)
+                target = _fwritable(rel)
                 if unique:
                     target = _unique(target)
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -1131,6 +1297,48 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         if errors and not saved:
             return jsonify({"error": errors})
         return jsonify({"ok": True, "saved": saved, **({"errors": errors} if errors else {})})
+
+    @app.route("/vyrii/files/unzip", methods=["POST"])
+    def files_unzip():
+        from vyrii import fileops
+        body = request.get_json(silent=True) or {}
+        try:
+            r = fileops.unzip(_fsafe(body.get("path", "")), writable=lambda p: _fwritable(
+                str(p.relative_to(_FHOME.resolve()))))
+            dest = str(r["dest"].relative_to(_FHOME.resolve())).replace("\\", "/") + "/"
+            return jsonify({"ok": True, "dest": dest, "files": r["files"], "skipped": r["skipped"]})
+        except (ValueError, fileops.FileOpError) as e:
+            return jsonify({"error": str(e)}), 400
+        except Exception as e:
+            return jsonify({"error": str(e)})
+
+    @app.route("/vyrii/files/git", methods=["POST"])
+    def files_git():
+        """{op: clone, path: folder, url, name?} | {op: pull, path} | {op: checkout, path, ref}"""
+        from vyrii import fileops
+        body = request.get_json(silent=True) or {}
+        op = body.get("op", "")
+        writable = lambda p: _fwritable(str(p.relative_to(_FHOME.resolve())))
+        try:
+            folder = _fsafe(body.get("path", ""))
+            if op == "clone":
+                r = fileops.clone(body.get("url", ""), folder, body.get("name", ""), writable=writable)
+                r["path"] = str(r["path"].relative_to(_FHOME.resolve())).replace("\\", "/") + "/"
+            elif op == "pull":
+                writable(folder)
+                r = fileops.pull(folder)
+            elif op == "checkout":
+                writable(folder)
+                r = fileops.checkout(folder, body.get("ref", ""))
+            elif op == "head":
+                r = {"head": fileops.head(folder) if fileops.is_repo(folder) else ""}
+            else:
+                return jsonify({"error": f"unknown op: {op}"}), 400
+            return jsonify({"ok": True, **r})
+        except (ValueError, fileops.FileOpError) as e:
+            return jsonify({"error": str(e)}), 400
+        except Exception as e:
+            return jsonify({"error": str(e)})
 
     @app.route("/vyrii/files/raw", methods=["GET"])
     def files_raw():
@@ -1165,9 +1373,13 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
     def files_delete():
         body = request.get_json(silent=True) or {}
         try:
-            p = _fsafe(body.get("path", ""))
+            p = _fwritable(body.get("path", ""))
             if p.is_dir():
-                shutil.rmtree(p)
+                # git's pack files are read-only on Windows: clear the flag and retry
+                def _ro(fn, path, _exc):
+                    os.chmod(path, 0o666)
+                    fn(path)
+                shutil.rmtree(p, onerror=_ro)
             elif p.is_file():
                 p.unlink()
             else:
@@ -1177,6 +1389,60 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
             return jsonify({"error": str(e)}), 400
         except Exception as e:
             return jsonify({"error": str(e)})
+
+    # ── /vyrii/process/* — pantheon UIs started on a folder inside ~/.vyrii ──
+    # only the fixed commands of process.TOOLS; the Process tab lists them
+
+    from . import process as _proc
+
+    def _proc_err(e):
+        return jsonify({"error": str(e)}), 400
+
+    @app.route("/vyrii/process/tools", methods=["GET"])
+    def process_tools():
+        try:
+            return jsonify(_proc.tools())
+        except _proc.ProcessError as e:
+            return _proc_err(e)
+
+    @app.route("/vyrii/process/list", methods=["GET"])
+    def process_list():
+        return jsonify({"processes": _proc.entries()})
+
+    @app.route("/vyrii/process/run", methods=["POST"])
+    def process_run():
+        body = request.get_json(silent=True) or {}
+        rel = str(body.get("path", "")).strip().strip("/\\")
+        try:
+            folder = _fsafe(rel)
+            port = body.get("port")
+            return jsonify(_proc.start(str(body.get("tool", "")), folder, rel or ".",
+                                       bind=app.config.get("VYRII_BIND", "127.0.0.1"),
+                                       port=int(port) if port not in (None, "") else None))
+        except (ValueError, _proc.ProcessError) as e:
+            return _proc_err(e)
+
+    @app.route("/vyrii/process/stop", methods=["POST"])
+    def process_stop():
+        try:
+            return jsonify(_proc.stop(str((request.get_json(silent=True) or {}).get("id", ""))))
+        except _proc.ProcessError as e:
+            return _proc_err(e)
+
+    @app.route("/vyrii/process/remove", methods=["POST"])
+    def process_remove():
+        try:
+            _proc.remove(str((request.get_json(silent=True) or {}).get("id", "")))
+            return jsonify({"ok": True})
+        except _proc.ProcessError as e:
+            return _proc_err(e)
+
+    @app.route("/vyrii/process/log", methods=["GET"])
+    def process_log():
+        try:
+            return jsonify({"log": _proc.log_tail(request.args.get("id", ""))})
+        except _proc.ProcessError as e:
+            return _proc_err(e)
 
     @app.route("/vyrii/files/index", methods=["POST"])
     def files_index():
@@ -1573,39 +1839,65 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
 
     @app.route("/vyrii/system/restart", methods=["POST"])
     def system_restart():
-        def _do():
-            time.sleep(1.5)
-            devnull = open(os.devnull, "w")
-            if platform.system() == "Windows":
-                import subprocess
-                script = str(_ROOT / "vyrii_auto_api.bat")
-                DETACHED  = 0x00000008
-                NEW_GROUP = 0x00000200
-                subprocess.Popen(script, creationflags=DETACHED | NEW_GROUP,
-                                 close_fds=True, stdin=subprocess.DEVNULL,
-                                 stdout=devnull, stderr=devnull, shell=True)
-            else:
-                import subprocess
-                script = str(_ROOT / "vyrii_auto_api.sh")
-                subprocess.Popen(["bash", script], start_new_session=True,
-                                 stdin=subprocess.DEVNULL, stdout=devnull, stderr=devnull)
-            os._exit(0)
-        threading.Thread(target=_do, daemon=False).start()
-        return jsonify({"ok": True, "message": "Restarting vyrii… reload the page in a few seconds."})
+        # used to run vyrii_auto_api.bat/.sh from the source checkout (FastAPI on :8000,
+        # absent from an installed package); now the same restart as restart-cmd
+        cmd, port = _restart_argv()
+        _restart_with(cmd)
+        return jsonify({"ok": True, "port": port,
+                        "message": "Restarting vyrii… reload the page in a few seconds."})
 
-    @app.route("/vyrii/system/restart-cmd", methods=["POST"])
-    def system_restart_cmd():
-        import shlex
-        body = request.get_json(silent=True) or {}
-        cmd_str = body.get("cmd", "").strip()
-        cmd = shlex.split(cmd_str) if cmd_str else sys.argv[:]
+    def _restart_argv() -> tuple[list[str], int | None]:
+        """The command vyrii was started with. With a port saved in Settings
+        (config.json "port") the port options are dropped, so the saved port wins
+        (-p > config.json > 5000 in __main__); without one the command stays as it was.
+        Never a command from the browser."""
+        argv = sys.argv[:]
+        cfg = _read_cfg()
+        if cfg.get("auth") is False:           # switched off in Settings: drop --auth of the start
+            argv = [a for a in argv if a != "--auth"]
+        saved = cfg.get("port")
+        try:
+            saved = int(saved) if saved else None
+        except (TypeError, ValueError):
+            saved = None
+        if not saved:
+            return argv, None
+        out, i = [argv[0]], 1
+        while i < len(argv):
+            a = argv[i]
+            if a in ("-p", "--port"):
+                i += 2
+                continue
+            if a.startswith("--port=") or (a.startswith("-p") and a[2:].isdigit()):
+                i += 1
+                continue
+            if a == "--flask" and i + 1 < len(argv) and argv[i + 1].isdigit():
+                out.append(a)          # bare --flask: the port comes from -p / config.json
+                i += 2
+                continue
+            if a.startswith("--flask="):
+                out.append("--flask")
+                i += 1
+                continue
+            out.append(a)
+            i += 1
+        return out, saved
+
+    def _restart_with(cmd: list[str]):
         def _do():
             import subprocess as _sp
             time.sleep(1.5)
             _sp.Popen(cmd, cwd=os.getcwd(), start_new_session=True)
             os._exit(0)
         threading.Thread(target=_do, daemon=False).start()
-        return jsonify({"ok": True})
+
+    @app.route("/vyrii/system/restart-cmd", methods=["POST"])
+    def system_restart_cmd():
+        # the body is ignored on purpose: it used to carry a command to run, i.e.
+        # any program on this machine for anyone who could reach vyrii
+        cmd, port = _restart_argv()
+        _restart_with(cmd)
+        return jsonify({"ok": True, "port": port})
 
     def _ollama_env() -> dict:
         cfg = _read_cfg()
@@ -1899,13 +2191,19 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
         def _ui_root():
             return redirect("/ui/")
 
+        # no-cache: the browser asks every time whether a page file changed (a 304 when not),
+        # so a new vyrii shows its new app.js without Ctrl+F5
         @app.route("/ui/")
         def _ui_index():
-            return send_from_directory(_ui_dir, "index.html")
+            r = send_from_directory(_ui_dir, "index.html", max_age=0)
+            r.headers["Cache-Control"] = "no-cache"
+            return r
 
         @app.route("/ui/<path:filename>")
         def _ui_static(filename):
-            return send_from_directory(_ui_dir, filename)
+            r = send_from_directory(_ui_dir, filename, max_age=0)
+            r.headers["Cache-Control"] = "no-cache"
+            return r
 
     return app
 
@@ -1914,6 +2212,7 @@ def main(port: int = 5000, host: str = "0.0.0.0",
          base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
          auth: bool = False) -> None:
     app = create_app(base_url=base_url, backend=backend, auth=auth)
+    app.config["VYRII_BIND"] = host
     print(f"vyrii -> http://localhost:{port}  (UI: /ui/)")
     print(f"  backend : {base_url}  ({backend})")
     print(f"  auth    : {'on' if auth else 'off'}")

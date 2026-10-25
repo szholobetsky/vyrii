@@ -293,6 +293,13 @@ def complete(
     options: dict | None = None,
     raise_errors: bool = False,
 ) -> str:
-    """Non-streaming single response."""
-    return "".join(stream_chat(messages, model, base_url, num_ctx, backend, timeout=timeout,
-                                options=options, raise_errors=raise_errors))
+    """Single response as one string. The chunks also go to the live listeners of
+    this thread (vyrii/live.py), so a tool tab can show the answer as it grows."""
+    from . import live
+    live.start()
+    parts = []
+    for chunk in stream_chat(messages, model, base_url, num_ctx, backend, timeout=timeout,
+                             options=options, raise_errors=raise_errors):
+        parts.append(chunk)
+        live.token(chunk)
+    return "".join(parts)

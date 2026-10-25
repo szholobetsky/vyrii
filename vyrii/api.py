@@ -868,8 +868,11 @@ def create_app(base_url: str = DEFAULT_OLLAMA, backend: str = BACKEND_OLLAMA,
     # vice versa, no separate storage).
 
     _DEFAULT_TOOLS = [
-        {"name": "SIMARGL", "port": 7861},
-        {"name": "SVITOVYD", "port": 7860},
+        {"name": "SIMARGL", "port": 8099},
+        {"name": "SVITOVYD", "port": 8097},
+        {"name": "GAMAYUN", "port": 8095},
+        {"name": "MOKOSH", "port": 8093},
+        {"name": "ALKONOST", "port": 8090},
     ]
 
     def _valid_tool(name, port):

@@ -1,0 +1,27 @@
+{
+  "_comment": [
+    "Commands the Process tab may start (Files -> a folder -> Run). Nothing else can be started.",
+    "Copy this file to ~/.config/vyrii/process_tools.json and edit it there: when that file exists it",
+    "replaces this one entirely - another stack of tools needs no change in vyrii.",
+    "Not inside ~/.vyrii: Files -> Upload writes there, and whoever writes this file decides what Run starts.",
+    "args: {port} {host} {root} are filled in (root = the chosen folder inside ~/.vyrii; it is also the cwd).",
+    "port: the default port, or null for a tool without a web page (only its log is shown).",
+    "os: optional list of platforms (linux, win32, darwin); elsewhere the command is shown as unavailable.",
+    "reserved_ports: never offered as a free port, beside the ports of the tools below."
+  ],
+  "reserved_ports": [5000, 7860, 7861, 8766],
+  "tools": [
+    {"name": "alkonost", "label": "alkonost — task board of 1bcoder plans",
+     "exe": "alkonost", "args": ["--port", "{port}", "--bind", "{host}", "--root", "{root}"], "port": 8090},
+    {"name": "simargl", "label": "simargl ui — semantic search, triangulation",
+     "exe": "simargl", "args": ["ui", "--port", "{port}", "--host", "{host}", "--root", "{root}"], "port": 8099},
+    {"name": "gamayun", "label": "gamayun ui — statistical ontology",
+     "exe": "gamayun", "args": ["ui", "--port", "{port}", "--host", "{host}"], "port": 8095},
+    {"name": "svitovyd", "label": "svitovyd ui — project map",
+     "exe": "svitovyd", "args": ["ui", "--port", "{port}", "--host", "{host}", "--root", "{root}"], "port": 8097},
+    {"name": "mokosh", "label": "mokosh ui — dataset: setup, ingest, status",
+     "exe": "mokosh", "args": ["ui", "--port", "{port}", "--host", "{host}", "--root", "{root}"], "port": 8093},
+    {"name": "syryn", "label": "syryn — Bluetooth beacon P:<ip> (no web page, log only)",
+     "exe": "syryn", "args": ["serve"], "port": null, "os": ["linux"]}
+  ]
+}

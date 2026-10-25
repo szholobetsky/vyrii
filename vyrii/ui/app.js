@@ -87,6 +87,7 @@ const state = {
   attUploads:  0,     // uploads still running
   chatId:      null,  // DB chat id (null = not yet saved)
   toolCtx:     {},    // result element id -> full context of the last run
+  toolRaw:     {},    // result element id -> the markdown it was rendered from
   fileViewRaw: '',    // raw content of currently viewed file
   selectedFile: null,
   showThinking: false,
@@ -113,6 +114,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupTabNav();
   loadTools();
   waLoadEngines();
+  checkExposure();
 
   // Shift+Enter submits on all tabs (find nearest btn-primary in same panel)
   document.addEventListener('keydown', e => {
@@ -385,8 +387,10 @@ function switchTab(tab) {
     refreshFiles();
   }
   if (tab === 'rag')      ragRefreshProjects();
+  if (tab === 'scan')     scModeHint();
   if (tab === 'settings') { loadSettings(); loadTools(); }
   if (tab === 'webask')   waLoadEngines();
+  if (tab === 'process')  procRefresh();
   if (tab === 'profile')   profileLoad();
   if (tab === 'team')      teamLoadProfiles();
   if (tab === 'scheduler') schRefresh();
@@ -645,6 +649,7 @@ function escHtml(s) {
 
 // ── UI HELPERS ────────────────────────────────────────
 function setResult(id, html, isHtml = false) {
+  delete state.toolRaw[id];
   const el = document.getElementById(id);
   if (!el) return;
   if (isHtml) {
@@ -655,6 +660,9 @@ function setResult(id, html, isHtml = false) {
 }
 
 function setResultMd(id, text) {
+  // keep the source: the rendered text of a KaTeX formula is a jumble of doubled symbols,
+  // so Add to chat / Copy take this markdown, not innerText
+  state.toolRaw[id] = text;
   const el = document.getElementById(id);
   if (!el) return;
   el.innerHTML = md(text);
@@ -663,6 +671,7 @@ function setResultMd(id, text) {
 
 function setResultLoading(id) {
   _setToolCtx(id, '');
+  delete state.toolRaw[id];
   const el = document.getElementById(id);
   if (!el) return;
   el.innerHTML = `<span class="status-bar"><span class="status-dot"></span>${t('generating')}</span>`;
@@ -678,8 +687,54 @@ function showToast(msg, duration = 2500) {
 function copyResult(id) {
   const el = document.getElementById(id);
   if (!el) return;
-  const text = el.innerText || el.textContent;
+  const text = state.toolRaw[id] ?? (el.innerText || el.textContent);
   _copyText(text);
+}
+
+// ── LIVE OUTPUT OF TOOL TABS ──────────────────────────
+// POST with {stream: true}: the server sends the model's text as it is written
+// ("token"; "start" = a new model call), the flow's progress lines ("log") and,
+// at the end, the usual JSON ("done"). The result box grows with the answer;
+// the caller gets the same `data` as from res.json() and renders it as before.
+async function streamJson(url, body, liveId) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...body, stream: true }),
+  });
+  if (!(res.headers.get('content-type') || '').includes('event-stream')) {
+    try { return await res.json(); } catch { return { error: `HTTP ${res.status}` }; }
+  }
+  const el = document.getElementById(liveId);
+  let buf = '', text = '', log = '', data = null, timer = null;
+  const paint = () => {
+    timer = null;
+    if (!el) return;
+    const tail = log.split('\n').filter(l => l.trim()).slice(-4).join('\n');
+    el.innerHTML = (tail ? `<div class="live-log">${escHtml(tail)}</div>` : '')
+      + (text ? md(text) : '') + '<span class="cursor-blink"></span>';
+    if (el.scrollHeight > el.clientHeight) el.scrollTop = el.scrollHeight;
+  };
+  const later = () => { if (!timer) timer = setTimeout(paint, 80); };
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf('\n\n')) >= 0) {
+      const line = buf.slice(0, i); buf = buf.slice(i + 2);
+      if (!line.startsWith('data: ')) continue;
+      let ev; try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+      if (ev.type === 'token')      { text += ev.text; later(); }
+      else if (ev.type === 'start') { text = ''; later(); }
+      else if (ev.type === 'log')   { log += ev.text; later(); }
+      else if (ev.type === 'done')  { data = ev.data; }
+    }
+  }
+  clearTimeout(timer);
+  return data || { error: t('api_error') };
 }
 
 // ── CONTEXT BLOCKS ────────────────────────────────────
@@ -717,7 +772,7 @@ function addToChat(id, mode = 'summary') {
   if (mode === 'full' && state.toolCtx[id]) {
     addContextBlock(title || id, state.toolCtx[id], 'full');
   } else {
-    addContextBlock(title || id, el.innerText || el.textContent, 'summary');
+    addContextBlock(title || id, state.toolRaw[id] ?? (el.innerText || el.textContent), 'summary');
   }
 }
 
@@ -1389,18 +1444,13 @@ async function runTranslate() {
   if (!text) return;
   setResultLoading('tr-result');
   try {
-    const res = await fetch('/vyrii/translate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const data = await streamJson('/vyrii/translate', {
         text,
         from_lang: document.getElementById('tr-from').value,
         to_lang:   document.getElementById('tr-to').value,
         mode:      document.getElementById('tr-mode').value,
         model:     getModel(),
-      }),
-    });
-    const data = await res.json();
+      }, 'tr-result');
     setResult('tr-result', data.result ?? data.error ?? t('api_error'));
   } catch (e) {
     setResult('tr-result', t('error_prefix') + e.message);
@@ -1467,17 +1517,12 @@ async function runWebAsk() {
   if (!question) return;
   setResultLoading('wa-result');
   try {
-    const res = await fetch('/vyrii/webask', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const data = await streamJson('/vyrii/webask', {
         question,
         url:   document.getElementById('wa-url').value.trim(),
         top_n: +document.getElementById('wa-n').value,
         model: getModel(),
-      }),
-    });
-    const data = await res.json();
+      }, 'wa-result');
     setResultMd('wa-result', data.result ?? data.error ?? t('api_error'));
     _setToolCtx('wa-result', data.context || '');
   } catch (e) {
@@ -1505,10 +1550,7 @@ async function runWebCrawl() {
   setResultLoading('wc-result');
   const format = document.querySelector('input[name="wc-format"]:checked')?.value || 'log';
   try {
-    const res = await fetch('/vyrii/webcrawl', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const data = await streamJson('/vyrii/webcrawl', {
         url,
         mode:       document.getElementById('wc-mode').value,
         filter:     document.getElementById('wc-filter').value,
@@ -1521,9 +1563,7 @@ async function runWebCrawl() {
         ask:        document.getElementById('wc-ask').checked,
         columns:    document.getElementById('wc-columns').value.trim(),
         model:      getModel(),
-      }),
-    });
-    const data = await res.json();
+      }, 'wc-result');
     setResultMd('wc-result', data.result ?? data.error ?? t('api_error'));
     _setToolCtx('wc-result', data.context || '');
   } catch (e) {
@@ -1537,16 +1577,11 @@ async function runWebAnalys() {
   if (!query) return;
   setResultLoading('wan-result');
   try {
-    const res = await fetch('/vyrii/webanalys', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const data = await streamJson('/vyrii/webanalys', {
         query,
         n:     +document.getElementById('wan-n').value,
         model: getModel(),
-      }),
-    });
-    const data = await res.json();
+      }, 'wan-result');
     setResultMd('wan-result', data.result ?? data.error ?? t('api_error'));
     _setToolCtx('wan-result', data.context || '');
   } catch (e) {
@@ -1616,10 +1651,7 @@ async function runDeepAgent() {
   const useWeb = document.getElementById('da-web').checked;
   const useRag = document.getElementById('da-rag-chk').checked;
   try {
-    const res = await fetch('/vyrii/deepagent', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const data = await streamJson('/vyrii/deepagent', {
         task,
         ref_url:     document.getElementById('da-ref').value.trim(),
         sections:    +document.getElementById('da-sections').value,
@@ -1627,9 +1659,7 @@ async function runDeepAgent() {
         use_web:     useWeb,
         web_n:       useWeb ? +document.getElementById('da-web-n').value : 3,
         rag_project: useRag ? document.getElementById('da-rag-project').value : '',
-      }),
-    });
-    const data = await res.json();
+      }, 'da-result');
     setResultMd('da-result', data.result ?? data.error ?? t('api_error'));
     _setToolCtx('da-result', data.context || '');
   } catch (e) {
@@ -1748,15 +1778,27 @@ function copyInterview() {
 }
 
 // ── SCAN ──────────────────────────────────────────────
+// mode: '' (auto: filter with a query, else summary) | summary | focus | filter
+function scModeHint() {
+  const mode = document.getElementById('sc-mode').value;
+  const q    = document.getElementById('sc-query').value.trim();
+  const eff  = mode || (q ? 'filter' : 'summary');
+  const hint = document.getElementById('sc-mode-hint');
+  if (hint) hint.textContent = (mode ? '' : eff + ': ') + t('sc_mode_' + eff + '_hint');
+}
+
 async function runScan() {
   const path = document.getElementById('sc-path').value.trim();
   if (!path) return;
+  const mode = document.getElementById('sc-mode').value;
+  if ((mode === 'focus' || mode === 'filter') && !document.getElementById('sc-query').value.trim()) {
+    showToast(t('sc_mode_needs_query'));
+    document.getElementById('sc-query').focus();
+    return;
+  }
   setResultLoading('sc-result');
   try {
-    const res = await fetch('/vyrii/scan', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const data = await streamJson('/vyrii/scan', {
         path,
         query:   document.getElementById('sc-query').value.trim(),
         chunk:   +document.getElementById('sc-chunk').value,
@@ -1764,10 +1806,9 @@ async function runScan() {
         target:  +document.getElementById('sc-target').value,
         rounds:  +document.getElementById('sc-rounds').value,
         ext:     document.getElementById('sc-ext').value.trim(),
+        mode,
         model:   getModel(),
-      }),
-    });
-    const data = await res.json();
+      }, 'sc-result');
     setResult('sc-result', data.result ?? data.error ?? t('api_error'));
     _setToolCtx('sc-result', data.context || '');
   } catch (e) {
@@ -1781,19 +1822,14 @@ async function runWebIndex() {
   if (!url) return;
   setResultLoading('wi-result');
   try {
-    const res = await fetch('/vyrii/webindex', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const data = await streamJson('/vyrii/webindex', {
         url,
         project: document.getElementById('wi-project').value.trim(),
         path:    document.getElementById('wi-path').value.trim(),
         depth:   +document.getElementById('wi-depth').value,
         pages:   +document.getElementById('wi-pages').value,
         model:   getModel(),
-      }),
-    });
-    const data = await res.json();
+      }, 'wi-result');
     setResult('wi-result', data.result ?? data.error ?? t('api_error'));
   } catch (e) {
     setResult('wi-result', t('error_prefix') + e.message);
@@ -1849,7 +1885,8 @@ async function runDeobfuscate() {
 state.filesLoaded = false;
 state.currentFilePath = '';
 
-async function refreshFiles() {
+// openDir: a folder ("a/b/") to show opened again after the reload (an upload into it)
+async function refreshFiles(openDir) {
   const tree = document.getElementById('files-tree');
   tree.innerHTML = `<div class="placeholder-text">${t('loading')}</div>`;
   try {
@@ -1858,6 +1895,7 @@ async function refreshFiles() {
     if (data.error) { tree.innerHTML = `<div class="placeholder-text">${data.error}</div>`; return; }
     tree.innerHTML = '';
     tree.appendChild(buildTree(data.tree || {}, ''));
+    if (typeof openDir === 'string' && openDir) _openTreeDir(tree, openDir);
   } catch (e) {
     tree.innerHTML = `<div class="placeholder-text">${t('error_prefix')}${e.message}</div>`;
   }
@@ -1875,13 +1913,14 @@ function buildTree(node, basePath) {
 
     if (isDir) {
       item.innerHTML = `<span class="item-icon">📁</span><span class="item-name">${name.slice(0,-1)}/</span>`;
+      item.dataset.dir = path;
       const sub = buildTree(children, path);
       sub.style.display = 'none';
       item.addEventListener('click', (e) => {
         e.stopPropagation();
         sub.style.display = sub.style.display === 'none' ? 'block' : 'none';
         item.querySelector('.item-icon').textContent = sub.style.display === 'none' ? '📁' : '📂';
-        showFileInfo({ name: name.slice(0,-1), path, type: 'directory' });
+        showFileInfo({ name: name.slice(0,-1), path, type: 'directory', git: !!(children && children['.git/']) });
       });
       li.appendChild(item);
       li.appendChild(sub);
@@ -1899,6 +1938,21 @@ function buildTree(node, basePath) {
   return ul;
 }
 
+// opens every folder on the way to dir ("a/b/"), the current folder stays a/b/
+function _openTreeDir(tree, dir) {
+  const parts = dir.split('/').filter(Boolean);
+  let path = '';
+  for (const part of parts) {
+    path += part + '/';
+    const item = Array.from(tree.querySelectorAll('.tree-item')).find(i => i.dataset.dir === path);
+    if (!item) return;
+    const sub = item.nextElementSibling;
+    if (sub) sub.style.display = 'block';
+    item.querySelector('.item-icon').textContent = '📂';
+  }
+  state.currentFilePath = dir;
+}
+
 function fileIcon(name) {
   const ext = name.split('.').pop().toLowerCase();
   const icons = { py:'🐍', js:'📜', ts:'📜', html:'🌐', css:'🎨', md:'📝',
@@ -1914,11 +1968,19 @@ function showFileInfo(info) {
   const isFile = info.type === 'file';
   const escapedPath = info.path.replace(/'/g, "\\'");
 
+  const isZip = isFile && /\.zip$/i.test(info.path);
+  const gitBtns = isFile ? '' : `
+       <button class="btn btn-ghost btn-sm" onclick="gitForm('clone')" data-i18n="git_clone_btn">Git clone</button>
+       ${info.git ? `<button class="btn btn-ghost btn-sm" onclick="gitPull('${escapedPath}')" data-i18n="git_pull_btn">Git pull</button>
+       <button class="btn btn-ghost btn-sm" onclick="gitForm('checkout')" data-i18n="git_checkout_btn">Checkout</button>` : ''}`;
   const actionBtns = isFile
     ? `<button class="btn btn-ghost btn-sm" onclick="viewFile('${escapedPath}')" data-i18n="view">View</button>
+       ${isZip ? `<button class="btn btn-primary btn-sm" onclick="unzipFile('${escapedPath}')" data-i18n="unzip_btn">Unzip</button>` : ''}
        <button class="btn btn-ghost btn-sm" onclick="fileScan('${escapedPath}')" data-i18n="scan_btn">Scan</button>
        <button class="btn btn-ghost btn-sm" onclick="ontologyGoTo('${escapedPath}')" data-i18n="tab_ontology">Ontology</button>`
-    : `<button class="btn btn-ghost btn-sm" onclick="fileIndex('${escapedPath}')" data-i18n="index_btn">Index</button>
+    : `${gitBtns}
+       <button class="btn btn-primary btn-sm" onclick="runMenu('${escapedPath}')" data-i18n="run_btn">Run</button>
+       <button class="btn btn-ghost btn-sm" onclick="fileIndex('${escapedPath}')" data-i18n="index_btn">Index</button>
        <button class="btn btn-ghost btn-sm" onclick="fileScan('${escapedPath}')" data-i18n="scan_btn">Scan</button>
        <button class="btn btn-ghost btn-sm" onclick="glossaryGoTo('${escapedPath}')">Glossary</button>
        <button class="btn btn-ghost btn-sm" onclick="ontologyGoTo('${escapedPath}')" data-i18n="tab_ontology">Ontology</button>`;
@@ -1929,7 +1991,10 @@ function showFileInfo(info) {
       <div class="fi-row"><span class="fi-label">Type</span><span>${info.type}</span></div>
       <div class="fi-row"><span class="fi-label">Path</span>
         <span style="word-break:break-all;font-size:12px">${escHtml(info.path)}</span></div>
+      ${info.git ? `<div class="fi-row"><span class="fi-label">Git</span>
+        <span id="fi-git-head" style="word-break:break-all;font-size:12px">…</span></div>` : ''}
     </div>
+    <div id="git-form" class="inline-dialog" style="display:none;flex-wrap:wrap"></div>
     <div class="form-actions">
       ${actionBtns}
       <button class="btn btn-danger btn-sm" onclick="deleteFile('${escapedPath}')" data-i18n="delete_btn">Delete</button>
@@ -1949,6 +2014,111 @@ function showFileInfo(info) {
       </div>
     </div>`;
   applyLang(state.lang);
+  if (info.git) _gitShowHead(info.path);
+}
+
+// ── UNZIP / GIT ──────────────────────────────────────
+// Only values go to the server (a zip path, a URL, a branch / tag / commit) —
+// vyrii/fileops.py runs unzip and git itself, without hooks; .git is written by git alone.
+
+async function _gitShowHead(path) {
+  try {
+    const data = await _fileOp('/vyrii/files/git', { op: 'head', path });
+    const el = document.getElementById('fi-git-head');
+    if (el && state.currentFilePath === path) el.textContent = data.head || '—';
+  } catch (e) { /* the row keeps "…" */ }
+}
+
+async function _fileOp(url, body) {
+  const res  = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify(body) });
+  const data = await res.json();
+  if (!data.ok) throw new Error(typeof data.error === 'string' ? data.error : JSON.stringify(data.error || t('api_error')));
+  return data;
+}
+
+function _fileOpBox(running) {
+  const box = document.getElementById('file-op-result');
+  box.style.display = 'block';
+  box.innerHTML = running ? `<span class="status-bar"><span class="status-dot"></span>${escHtml(running)}</span>` : '';
+  return box;
+}
+
+function _fileOpDone(box, lines, openDir) {
+  box.innerHTML = `<pre class="file-raw" style="white-space:pre-wrap">${escHtml(lines.filter(Boolean).join('\n'))}</pre>`;
+  if (openDir !== undefined) refreshFiles(openDir);
+}
+
+async function unzipFile(path) {
+  const box = _fileOpBox(t('unzip_running'));
+  try {
+    const d = await _fileOp('/vyrii/files/unzip', { path });
+    _fileOpDone(box, [`${t('unzip_done')} ${d.files} → ~/.vyrii/${d.dest}`,
+      d.skipped?.length ? `${t('unzip_skipped_git')} ${d.skipped.length}` : ''], d.dest);
+  } catch (e) { box.textContent = t('error_prefix') + e.message; }
+}
+
+function gitForm(op) {
+  const form = document.getElementById('git-form');
+  if (!form) return;
+  form.style.display = 'flex';
+  form.innerHTML = op === 'clone'
+    ? `<input type="text" id="git-url" class="form-control" style="flex:2;min-width:220px"
+         placeholder="https://github.com/user/repo.git">
+       <input type="text" id="git-name" class="form-control" style="flex:1;min-width:120px"
+         placeholder="${escHtml(t('git_name_ph'))}">
+       <button class="btn btn-primary btn-sm" onclick="gitClone()">${t('git_clone_btn')}</button>
+       <button class="btn btn-ghost btn-sm" onclick="gitFormClose()">${t('cancel')}</button>`
+    : `<input type="text" id="git-ref" class="form-control" style="flex:1;min-width:200px"
+         placeholder="${escHtml(t('git_ref_ph'))}">
+       <button class="btn btn-primary btn-sm" onclick="gitCheckout()">${t('git_checkout_btn')}</button>
+       <button class="btn btn-ghost btn-sm" onclick="gitFormClose()">${t('cancel')}</button>`;
+  const first = form.querySelector('input');
+  first.focus();
+  form.querySelectorAll('input').forEach(i => i.addEventListener('keydown', e => {
+    if (e.key === 'Enter') (op === 'clone' ? gitClone : gitCheckout)();
+    if (e.key === 'Escape') gitFormClose();
+  }));
+}
+
+function gitFormClose() {
+  const form = document.getElementById('git-form');
+  if (form) { form.style.display = 'none'; form.innerHTML = ''; }
+}
+
+async function gitClone() {
+  const path = state.currentFilePath;
+  const url  = document.getElementById('git-url')?.value.trim();
+  const name = document.getElementById('git-name')?.value.trim();
+  if (!url) return;
+  gitFormClose();
+  const box = _fileOpBox(t('git_running') + ' git clone ' + url);
+  try {
+    const d = await _fileOp('/vyrii/files/git', { op: 'clone', path, url, name });
+    _fileOpDone(box, [`→ ~/.vyrii/${d.path}`, d.head, '', d.output], d.path);
+  } catch (e) { box.textContent = t('error_prefix') + e.message; }
+}
+
+async function gitPull(path) {
+  const box = _fileOpBox(t('git_running') + ' git pull');
+  try {
+    const d = await _fileOp('/vyrii/files/git', { op: 'pull', path });
+    _fileOpDone(box, [d.head, '', d.output], path);
+    _gitShowHead(path);
+  } catch (e) { box.textContent = t('error_prefix') + e.message; }
+}
+
+async function gitCheckout() {
+  const path = state.currentFilePath;
+  const ref  = document.getElementById('git-ref')?.value.trim();
+  if (!ref) return;
+  gitFormClose();
+  const box = _fileOpBox(t('git_running') + ' git checkout ' + ref);
+  try {
+    const d = await _fileOp('/vyrii/files/git', { op: 'checkout', path, ref });
+    _fileOpDone(box, [d.head, '', d.output], path);
+    _gitShowHead(path);
+  } catch (e) { box.textContent = t('error_prefix') + e.message; }
 }
 
 async function viewFile(path) {
@@ -2063,26 +2233,13 @@ async function fileIndex(path) {
   }
 }
 
-async function fileScan(path) {
-  const result = document.getElementById('file-op-result');
-  result.style.display = 'block';
-  result.innerHTML = `<span class="status-bar"><span class="status-dot"></span>Scanning…</span>`;
-  try {
-    const res  = await fetch('/vyrii/scan', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        path,
-        query: '', chunk: 4000, summary: 400,
-        target: 8000, rounds: 1, ext: '',
-        model: getModel(),
-      }),
-    });
-    const data = await res.json();
-    result.textContent = data.result ?? data.error ?? t('api_error');
-  } catch (e) {
-    result.textContent = t('error_prefix') + e.message;
-  }
+// Files tab -> Scan: fill the path and open the tab (as glossaryGoTo / ontologyGoTo);
+// the run starts from the tab, where the query, chunk sizes and extensions are chosen
+function fileScan(path) {
+  document.getElementById('sc-path').value = path;
+  switchTab('scan');
+  scModeHint();
+  document.getElementById('sc-query').focus();
 }
 
 // ── GLOSSARY ─────────────────────────────────────────
@@ -2509,6 +2666,8 @@ async function deleteFile(path) {
 }
 
 function showMkdir() {
+  // the new folder goes into the folder the person stands on, as an upload does
+  document.getElementById('mkdir-parent').textContent = '~/.vyrii/' + _filesDir();
   document.getElementById('mkdir-dialog').style.display = 'flex';
   document.getElementById('mkdir-name').focus();
 }
@@ -2520,14 +2679,19 @@ function closeMkdir() {
 async function doMkdir() {
   const name = document.getElementById('mkdir-name').value.trim();
   if (!name) return;
+  const path = _filesDir() + name.replace(/^[\/\\]+/, '');
   try {
     const res  = await fetch('/vyrii/files/mkdir', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: name }),
+      body: JSON.stringify({ path }),
     });
     const data = await res.json();
-    if (data.ok) { showToast('Created'); closeMkdir(); refreshFiles(); }
+    if (data.ok) {
+      showToast('Created ~/.vyrii/' + path);
+      closeMkdir();
+      refreshFiles(path.replace(/[\/\\]*$/, '/'));
+    }
     else showToast(data.error || t('api_error'));
   } catch (e) {
     showToast(t('error_prefix') + e.message);
@@ -2604,12 +2768,7 @@ async function runRagAsk() {
   document.getElementById('rag-llm-col').style.display = 'flex';
   setResultLoading('rag-llm-out');
   try {
-    const res  = await fetch('/vyrii/rag/ask', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, context: _ragContext, model: getModel() }),
-    });
-    const data = await res.json();
+    const data = await streamJson('/vyrii/rag/ask', { query, context: _ragContext, model: getModel() }, 'rag-llm-out');
     setResultMd('rag-llm-out', data.result ?? data.error ?? t('api_error'));
   } catch (e) {
     setResult('rag-llm-out', t('error_prefix') + e.message);
@@ -2635,8 +2794,7 @@ async function loadSettings() {
     const rEl = document.getElementById(rmode === 'timer' ? 'cfg-reserve-timer' : 'cfg-reserve-response');
     if (rEl) rEl.checked = true;
     set('cfg-reserve-timeout', cfg.reserve_timeout || 600);
-    const rcEl = document.getElementById('restart-cmd-input');
-    if (rcEl && cfg.restart_cmd) rcEl.value = cfg.restart_cmd;
+    set('cfg-port', cfg.port || '');
     set('cfg-ollama-kv-cache',   cfg.ollama_kv_cache    || '');
     set('cfg-ollama-keep-alive', cfg.ollama_keep_alive  || '');
     set('cfg-ollama-max-loaded', cfg.ollama_max_loaded_models || '');
@@ -2686,7 +2844,8 @@ async function saveAuth() {
 // ── external tools bar (same config.json "external_tools" as Gradio) ──
 
 function _toolsBarHtml(tools) {
-  return tools.map(t => `<a href="http://localhost:${t.port}" target="_blank" class="tool-link">`
+  // the machine vyrii was opened on (a headless mini-PC seen from a laptop), not this one
+  return tools.map(t => `<a href="${location.protocol}//${location.hostname}:${t.port}/" target="_blank" class="tool-link">`
     + `${t.name} :${t.port}</a>`).join('');
 }
 
@@ -2821,37 +2980,36 @@ function _sysStatus(msg, isError) {
   el.textContent = msg;
 }
 
+// After a restart vyrii may listen on another port (Settings → Port): reload there.
+function _reloadAfterRestart(port) {
+  const target = port && String(port) !== location.port
+    ? `${location.protocol}//${location.hostname}:${port}${location.pathname}`
+    : null;
+  setTimeout(() => target ? (location.href = target) : location.reload(), 5000);
+}
+
 async function sysRestart() {
   _sysStatus(t('sys_restarting'), false);
   try {
-    await fetch('/vyrii/system/restart-cmd', { method: 'POST',
-      headers: {'Content-Type': 'application/json'}, body: JSON.stringify({}) });
+    const data = await (await fetch('/vyrii/system/restart-cmd', { method: 'POST',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify({}) })).json();
     _sysStatus(t('sys_restarting_wait'), false);
-    setTimeout(() => location.reload(), 5000);
+    _reloadAfterRestart(data.port);
   } catch {
     _sysStatus(t('sys_restart_sent'), false);
-    setTimeout(() => location.reload(), 5000);
+    _reloadAfterRestart(null);
   }
 }
 
-async function sysRestartCmd() {
-  const cmd = (document.getElementById('restart-cmd-input')?.value || '').trim();
-  if (!cmd) { _sysStatus('Enter a command first.', true); return; }
+async function sysPortRestart() {
+  const port = document.getElementById('cfg-port')?.value.trim() || '';
   try {
-    await fetch('/vyrii/settings', { method: 'POST',
+    const data = await (await fetch('/vyrii/settings', { method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ restart_cmd: cmd }) });
-  } catch { /* save failed — proceed anyway */ }
-  _sysStatus(t('sys_restarting'), false);
-  try {
-    await fetch('/vyrii/system/restart-cmd', { method: 'POST',
-      headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ cmd }) });
-    _sysStatus(t('sys_restarting_wait'), false);
-    setTimeout(() => location.reload(), 5000);
-  } catch {
-    _sysStatus(t('sys_restart_sent'), false);
-    setTimeout(() => location.reload(), 5000);
-  }
+      body: JSON.stringify({ port }) })).json();
+    if (data.error) { _sysStatus(data.error, true); return; }
+  } catch (e) { _sysStatus(t('error_prefix') + e.message, true); return; }
+  sysRestart();
 }
 
 async function ollamaRestart() {
@@ -2910,16 +3068,26 @@ async function sysShutdown() {
   }
 }
 
+// the folder the person stands on: a selected folder, or the folder of a selected file
+function _filesDir() {
+  const p = state.currentFilePath || '';
+  if (!p || p.endsWith('/')) return p;
+  return p.includes('/') ? p.slice(0, p.lastIndexOf('/') + 1) : '';
+}
+
 async function uploadFiles(input) {
   if (!input.files.length) return;
+  const dest = _filesDir();
   const form = new FormData();
   for (const f of input.files) form.append('files', f);
   try {
-    const res  = await fetch('/vyrii/files/upload', { method: 'POST', body: form });
+    const res  = await fetch('/vyrii/files/upload?dest=' + encodeURIComponent(dest), { method: 'POST', body: form });
     const data = await res.json();
     if (data.ok) {
-      showToast(`Uploaded: ${(data.saved || []).join(', ')}`);
-      refreshFiles();
+      const n = (data.saved || []).length;
+      showToast(`Uploaded ${n} → ~/.vyrii/${dest}`);
+      if (data.errors?.length) showToast(JSON.stringify(data.errors));
+      refreshFiles(dest);
     } else {
       showToast(JSON.stringify(data.error || t('api_error')));
     }
@@ -3461,6 +3629,7 @@ async function schRefresh() {
     const tasks = data.tasks || [];
     const box = document.getElementById('sch-table');
     if (!box) return;
+    if (data.need_auth) { box.innerHTML = `<b style="color:var(--danger,#c0453a)">${esc(t('sch_need_auth'))}</b>`; return; }
     if (!tasks.length) { box.textContent = 'No scheduled tasks yet.'; return; }
     const rows = tasks.map((task, i) => {
       const stype = task.schedule_type || 'daily';
@@ -3987,4 +4156,202 @@ async function ctxtimerReportClear() {
   } catch (e) {
     showToast(t('error_prefix') + e.message);
   }
+}
+
+
+// ── PROCESS ───────────────────────────────────────────
+// Files → Run starts one of the pantheon's UIs on the selected folder (inside
+// ~/.vyrii only, fixed commands only); the Process tab lists what vyrii started.
+let _procTimer = null;
+
+function _procUrl(port) {
+  return `${location.protocol}//${location.hostname}:${port}/`;
+}
+
+function _fileOpBox() {
+  const box = document.getElementById('file-op-result');
+  box.style.display = 'block';
+  return box;
+}
+
+async function runMenu(path) {
+  const box = _fileOpBox();
+  box.innerHTML = `<span class="placeholder-text">${t('loading')}</span>`;
+  try {
+    const data = await (await fetch('/vyrii/process/tools')).json();
+    if (data.error) { box.textContent = data.error; return; }
+    const p = path.replace(/'/g, "\\'");
+    box.innerHTML = `<div><b>${t('run_on')}</b> ${escHtml(path)}</div><div class="run-menu">` +
+      (data.tools || []).map(tl => !tl.unavailable
+        ? `<button class="btn btn-ghost btn-sm" onclick="runTool('${tl.name}','${p}')">▶ ${escHtml(tl.label)} <span class="placeholder-text">${tl.port ? ':' + tl.port : ''}</span></button>`
+        : `<button class="btn btn-ghost btn-sm" disabled>${escHtml(tl.label)} — ${escHtml(tl.unavailable)}</button>`
+      ).join('') + `</div><div class="placeholder-text" style="font-size:11px;margin-top:6px">${escHtml(data.source || '')}</div>`;
+  } catch (e) { box.textContent = t('error_prefix') + e.message; }
+}
+
+async function runTool(tool, path, port) {
+  const box = _fileOpBox();
+  const p = path.replace(/'/g, "\\'");
+  box.innerHTML = `<span class="placeholder-text">${t('run_starting')} ${tool}…</span>`;
+  let data;
+  try {
+    const res = await fetch('/vyrii/process/run', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tool, path, port: port || null }),
+    });
+    data = await res.json();
+  } catch (e) { box.textContent = t('error_prefix') + e.message; return; }
+  if (data.error) {
+    box.innerHTML = `<div style="color:var(--danger,#c0453a)">${escHtml(data.error)}</div>`;
+    return;
+  }
+  if (data.need_port) {
+    const who = data.holder
+      ? `${data.holder.tool} (${t('run_from_folder')} ${escHtml(data.holder.rel)})`
+      : t('run_busy_other');
+    box.innerHTML = `
+      <div>${t('run_port_busy').replace('{port}', data.busy)} — ${who}.</div>
+      <div class="form-row" style="margin-top:8px;align-items:flex-end">
+        <div class="form-group">
+          <label class="form-label">${t('run_port')}</label>
+          <input id="run-port" type="number" class="form-control form-control-sm" min="1024" max="65535" value="${data.suggest}">
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="runTool('${tool}','${p}',+document.getElementById('run-port').value)">${t('run_btn')}</button>
+      </div>`;
+    return;
+  }
+  const head = data.already ? t('run_already') : t('run_started');
+  box.innerHTML = `<div>${head}: <b>${escHtml(data.tool)}</b> — ${escHtml(data.rel)}${data.port ? ' — :' + data.port : ''}</div>
+    <div class="form-actions" style="margin-top:8px">
+      ${data.port ? `<a class="btn btn-primary btn-sm" href="${_procUrl(data.port)}" target="_blank" rel="noopener">${t('open')}</a>` : ''}
+      <button class="btn btn-ghost btn-sm" onclick="switchTab('process')">${t('tab_process')}</button>
+    </div>`;
+}
+
+async function procRefresh() {
+  const list = document.getElementById('proc-list');
+  if (!list) return;
+  let items = [];
+  try {
+    items = (await (await fetch('/vyrii/process/list')).json()).processes || [];
+  } catch (e) { list.textContent = t('error_prefix') + e.message; return; }
+  if (!items.length) {
+    list.innerHTML = `<div class="placeholder-text">${t('proc_empty')}</div>`;
+  } else {
+    list.innerHTML = items.slice().reverse().map(p => {
+      const st = p.status;
+      const live = st !== 'exited';
+      const started = new Date(p.started * 1000).toLocaleString();
+      return `<div class="proc-row">
+        <div><b>${escHtml(p.tool)}</b><div class="proc-status ${st.replace(' ', '-')}">● ${t('proc_' + st.replace(' ', '_'))}</div></div>
+        <div class="proc-folder" title="${escHtml(p.folder)}">${escHtml(p.rel)}<div style="font-size:11px">${started} · pid ${p.pid}</div></div>
+        <div>${p.port ? ':' + p.port : '—'}</div>
+        <div style="font-size:11px">${escHtml(p.host)}</div>
+        <div class="proc-actions">
+          ${st === 'running' && p.port ? `<a class="btn btn-primary btn-sm" href="${_procUrl(p.port)}" target="_blank" rel="noopener">${t('open')}</a>` : ''}
+          <button class="btn btn-ghost btn-sm" onclick="procLog('${p.id}','${escHtml(p.tool)}')">log</button>
+          ${live ? `<button class="btn btn-danger btn-sm" onclick="procStop('${p.id}')">${t('proc_stop')}</button>`
+                 : `<button class="btn btn-ghost btn-sm" onclick="procRemove('${p.id}')">${t('proc_remove')}</button>`}
+        </div>
+      </div>`;
+    }).join('');
+  }
+  clearTimeout(_procTimer);
+  if (state.activeTab === 'process') _procTimer = setTimeout(procRefresh, 4000);
+}
+
+async function _procPost(url, id) {
+  const data = await (await fetch(url, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }),
+  })).json();
+  if (data.error) showToast(data.error);
+  procRefresh();
+}
+
+function procStop(id)   { _procPost('/vyrii/process/stop', id); }
+function procRemove(id) { _procPost('/vyrii/process/remove', id); }
+
+async function procLog(id, tool) {
+  const wrap = document.getElementById('proc-log-wrap');
+  wrap.style.display = 'block';
+  document.getElementById('proc-log-label').textContent = `log — ${tool}`;
+  const data = await (await fetch('/vyrii/process/log?id=' + encodeURIComponent(id))).json();
+  document.getElementById('proc-log').textContent = data.error || data.log || '(empty)';
+}
+
+
+// ── NETWORK EXPOSURE ──────────────────────────────────
+// Without a password and reachable over Wi-Fi (or a network vyrii cannot name),
+// say so in big letters — once per vyrii start in this browser. A console
+// warning would never be seen on a headless mini-PC.
+async function checkExposure() {
+  let data;
+  try { data = await (await fetch('/vyrii/system/exposure')).json(); } catch { return; }
+  state.authOn = !!data.auth;
+  const cb = document.getElementById('cfg-auth-on');
+  if (cb) cb.checked = state.authOn;
+  _showTrusted(data.trusted_ips || []);
+  if (!data.warn) return;
+  try { if (localStorage.getItem('vyrii_exposure_seen') === data.boot) return; } catch { /* private mode */ }
+  const label = { ethernet: 'Ethernet', wifi: 'Wi-Fi', other: t('expo_other') };
+  document.getElementById('exposure-list').innerHTML = (data.addresses || [])
+    .filter(a => !a.trusted)
+    .map(a => `<label style="display:flex;gap:8px;align-items:center;cursor:pointer">
+      <input type="checkbox" class="form-check expo-ip" value="${escHtml(a.ip)}" checked>
+      <span><b>${label[a.kind] || a.kind}</b>${a.iface ? ' (' + escHtml(a.iface) + ')' : ''}:
+      <code>${escHtml(a.ip)}:${escHtml(data.port || '5000')}</code></span></label>`).join('');
+  const ov = document.getElementById('exposure-overlay');
+  ov.dataset.boot = data.boot;
+  ov.style.display = 'flex';
+}
+
+function closeExposure(toSettings) {
+  const ov = document.getElementById('exposure-overlay');
+  try { localStorage.setItem('vyrii_exposure_seen', ov.dataset.boot || ''); } catch { /* private mode */ }
+  ov.style.display = 'none';
+  if (toSettings) switchTab('settings');
+}
+
+// "This is a private network": the ticked addresses stop warning while the machine
+// keeps them; a new address (plugged into a router) warns again.
+async function trustExposure() {
+  const ips = [...document.querySelectorAll('.expo-ip:checked')].map(c => c.value);
+  if (!ips.length) { closeExposure(false); return; }
+  try {
+    const data = await (await fetch('/vyrii/system/trust', { method: 'POST',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ ips }) })).json();
+    _showTrusted(data.trusted_ips || []);
+  } catch (e) { showToast(t('error_prefix') + e.message); }
+  closeExposure(false);
+}
+
+function _showTrusted(ips) {
+  const el = document.getElementById('trusted-ips');
+  if (!el) return;
+  el.innerHTML = ips.length
+    ? ips.map(ip => `<div style="display:flex;align-items:center;gap:8px">
+        <code>${escHtml(ip)}</code>
+        <button class="btn btn-ghost btn-sm" onclick="forgetTrusted('${escHtml(ip)}')">${t('trust_remove')}</button>
+      </div>`).join('')
+    : `<span class="placeholder-text">${t('trust_none')}</span>`;
+}
+
+// one address at a time: an address added by mistake goes, the others stay
+async function forgetTrusted(ip) {
+  try {
+    const data = await (await fetch('/vyrii/system/trust', { method: 'POST',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ remove: ip }) })).json();
+    _showTrusted(data.trusted_ips || []);
+    try { localStorage.removeItem('vyrii_exposure_seen'); } catch { /* private mode */ }
+  } catch (e) { showToast(t('error_prefix') + e.message); }
+}
+
+async function saveAuthOn() {
+  const on = document.getElementById('cfg-auth-on').checked;
+  try {
+    const data = await (await fetch('/vyrii/settings', { method: 'POST',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ auth: on }) })).json();
+    if (data.error) { showToast(data.error); return; }
+  } catch (e) { showToast(t('error_prefix') + e.message); return; }
+  sysRestart();
 }

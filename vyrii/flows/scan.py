@@ -12,6 +12,11 @@ Usage:
 Core flags:
   --query "text"   Filter mode: skip chunks not relevant to the query.
                    Without --query: general summarization of every chunk.
+  --mode M         summary | focus | filter (default: filter with --query, else summary)
+                   summary — every chunk summarized, the query not used (1 LLM call/chunk)
+                   focus   — every chunk summarized around the query, none skipped (1 call)
+                   filter  — YES/NO relevance first, only relevant chunks summarized
+                             around the query (2 calls/chunk)
   --chunk N        Chunk size in chars (default 4000, ≈1K tokens).
   --summary M      Max chars per chunk summary (default 400).
 
@@ -100,49 +105,52 @@ def _next_compact_path() -> str:
 
 # ── LLM helpers ───────────────────────────────────────────────────────────────
 
-def _llm(chat, prompt: str) -> str:
+# The chunk comes FIRST and the instruction after it: the YES/NO question and the
+# summary of the same chunk then share the whole prompt up to the end of the chunk,
+# and the server (Ollama, llama.cpp) reuses what it already read — in filter mode
+# the summary reads only its instruction, not the chunk a second time.
+
+def _llm(chat, chunk: str, instruction: str) -> str:
     msgs = [
         {"role": "system", "content": "You are a precise summarizer. Follow instructions exactly."},
-        {"role": "user",   "content": prompt},
+        {"role": "user",   "content": f"<text>\n{chunk}\n</text>\n\n{instruction}"},
     ]
     return (chat._stream_chat(msgs) or "").strip()
 
 
 def _is_relevant(chat, chunk: str, query: str) -> bool:
-    prompt = (
-        f'Does this text contain information relevant to: "{query}"?\n'
-        f"Reply YES or NO only.\n\n{chunk}"
-    )
-    answer = _llm(chat, prompt)
-    return answer.upper().startswith("YES")
+    answer = _llm(chat, chunk,
+                  f'Does the text above contain information relevant to: "{query}"?\n'
+                  f"Reply YES or NO only.")
+    return answer.lstrip("*# \"'").upper().startswith("YES")
 
 
 def _summarize(chat, chunk: str, summary_chars: int, query: str = "") -> str:
     if query:
-        prompt = (
-            f"Summarize the following text in {summary_chars} characters or less, "
+        instruction = (
+            f"Summarize the text above in {summary_chars} characters or less, "
             f'focusing on: "{query}". '
-            f"Preserve specific facts, names, numbers. Output ONLY the summary.\n\n{chunk}"
+            f"Preserve specific facts, names, numbers. Output ONLY the summary."
         )
     else:
-        prompt = (
-            f"Summarize the following text in {summary_chars} characters or less. "
+        instruction = (
+            f"Summarize the text above in {summary_chars} characters or less. "
             f"Preserve key facts, numbers, names, and technical details. "
-            f"Output ONLY the summary.\n\n{chunk}"
+            f"Output ONLY the summary."
         )
-    return _llm(chat, prompt)
+    return _llm(chat, chunk, instruction)
 
 
 # ── single compaction pass ────────────────────────────────────────────────────
 
 def _run_pass(chat, source_label: str, full_text: str,
               query: str, chunk_size: int, summary_chars: int,
-              pass_n: int) -> tuple:
+              pass_n: int, mode: str = "") -> tuple:
     """Compact full_text → return (output_text, out_path)."""
     chunks = [full_text[i:i + chunk_size]
               for i in range(0, len(full_text), chunk_size)]
     total = len(chunks)
-    mode = "filter" if query else "summary"
+    mode = mode or ("filter" if query else "summary")
     print(f"\n[scan] pass {pass_n}  input={len(full_text)} chars  "
           f"chunks={total}  mode={mode}")
 
@@ -150,11 +158,13 @@ def _run_pass(chat, source_label: str, full_text: str,
     skipped = 0
     for idx, chunk in enumerate(chunks, 1):
         print(f"Scan: {idx}/{total}")
-        if query:
+        if mode == "filter":
             if not _is_relevant(chat, chunk, query):
                 print(f"  skip — not relevant")
                 skipped += 1
                 continue
+            text = _summarize(chat, chunk, summary_chars, query)
+        elif mode == "focus":
             text = _summarize(chat, chunk, summary_chars, query)
         else:
             text = _summarize(chat, chunk, summary_chars)
@@ -167,8 +177,8 @@ def _run_pass(chat, source_label: str, full_text: str,
     output_text = "\n\n".join(summaries)
     out_path = _next_compact_path()
 
-    header_lines = [f"# Scan: {source_label}", f"Pass: {pass_n}"]
-    if query:
+    header_lines = [f"# Scan: {source_label}", f"Pass: {pass_n}", f"Mode: {mode}"]
+    if query and mode != "summary":
         header_lines.append(f"Query: {query}")
     header_lines += [
         f"Chunks: {total}  skipped: {skipped}  matched: {total - skipped}",
@@ -195,6 +205,19 @@ def run(chat, args: str):
     if m:
         query = m.group(1) or m.group(2)
         args = (args[:m.start()] + args[m.end():]).strip()
+
+    mode = ""
+    m = _re.search(r'--mode\s+(\S+)', args)
+    if m:
+        mode = m.group(1).lower()
+        args = (args[:m.start()] + args[m.end():]).strip()
+    if mode and mode not in ("summary", "focus", "filter"):
+        print(f"[scan] unknown mode: {mode} — summary, focus or filter")
+        return
+    mode = mode or ("filter" if query else "summary")
+    if mode in ("focus", "filter") and not query:
+        print(f"[scan] mode {mode} needs --query")
+        return
 
     chunk_size = _DEFAULT_CHUNK
     m = _re.search(r'--chunk\s+(\d+)', args)
@@ -235,12 +258,13 @@ def run(chat, args: str):
     # path: remaining arg (strip quotes)
     path = args.strip().strip("\"'")
     if not path:
-        print("usage: /flow scan <path> [--query 'text'] [--chunk N] [--summary M]")
+        print("usage: /flow scan <path> [--query 'text'] [--mode summary|focus|filter] [--chunk N] [--summary M]")
         print("       [--rounds N] [--target N] [--ext a,b,c] [--all-ext]")
         return
 
     print(f"[scan] path        : {path}")
-    print(f"[scan] query       : {query or '(none — general summary)'}")
+    print(f"[scan] mode        : {mode}")
+    print(f"[scan] query       : {query if mode != 'summary' else '(none — general summary)'}")
     print(f"[scan] chunk       : {chunk_size} chars")
     print(f"[scan] summary     : {summary_chars} chars/chunk")
     print(f"[scan] rounds      : {max_rounds}" + (" (no recursion)" if max_rounds == 1 else ""))
@@ -274,7 +298,7 @@ def run(chat, args: str):
     for pass_n in range(1, max_rounds + 1):
         current_text, out_path = _run_pass(
             chat, source_label, current_text,
-            query, chunk_size, summary_chars, pass_n,
+            query, chunk_size, summary_chars, pass_n, mode,
         )
         final_path = out_path
         source_label = out_path

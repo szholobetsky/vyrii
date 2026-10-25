@@ -109,6 +109,10 @@
         <span class="ni-icon">🗺️</span>
         <span class="ni-label" data-i18n="tab_svitovyd">svitovyd</span>
       </button>
+      <button class="nav-item" data-tab="process">
+        <span class="ni-icon">▶️</span>
+        <span class="ni-label" data-i18n="tab_process">Process</span>
+      </button>
       <button class="nav-item" data-tab="settings">
         <span class="ni-icon">⚙️</span>
         <span class="ni-label" data-i18n="tab_settings">Settings</span>
@@ -613,7 +617,17 @@
         </div>
         <div class="form-group">
           <label class="form-label" data-i18n="query_optional">Query <span class="placeholder-text">(optional)</span></label>
-          <input id="sc-query" type="text" class="form-control" data-i18n-ph="sc_query_ph" placeholder="Filter by topic…">
+          <input id="sc-query" type="text" class="form-control" data-i18n-ph="sc_query_ph" placeholder="Filter by topic…" oninput="scModeHint()">
+        </div>
+        <div class="form-group">
+          <label class="form-label" data-i18n="sc_mode">Mode</label>
+          <select id="sc-mode" class="form-control" style="max-width:260px" onchange="scModeHint()">
+            <option value="" data-i18n="sc_mode_auto">Auto — filter with a query, else summary</option>
+            <option value="summary">summary</option>
+            <option value="focus">focus</option>
+            <option value="filter">filter</option>
+          </select>
+          <div id="sc-mode-hint" class="placeholder-text" style="font-size:12px;margin-top:4px"></div>
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -925,6 +939,18 @@
 
         <div class="settings-section">
           <div class="settings-title" data-i18n="settings_auth">Authentication</div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+            <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13px">
+              <input type="checkbox" id="cfg-auth-on" class="form-check">
+              <span data-i18n="auth_require">Require password</span>
+            </label>
+            <button class="btn btn-ghost btn-sm" onclick="saveAuthOn()" data-i18n="sys_port_btn">Save and restart</button>
+          </div>
+          <div style="margin-bottom:10px;font-size:13px">
+            <div data-i18n="trust_label" style="margin-bottom:4px">Private networks (no warning):</div>
+            <div id="trusted-ips" style="display:flex;flex-direction:column;gap:4px;max-height:240px;overflow:auto"></div>
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px" data-i18n="auth_require_hint">Change the password below. The Scheduler works only with a password.</div>
           <div class="form-row">
             <div class="form-group flex-grow">
               <label class="form-label" data-i18n="settings_auth_user">Username</label>
@@ -1097,12 +1123,12 @@
         <div class="settings-section">
           <div class="settings-title" data-i18n="settings_control">System control</div>
           <div class="form-row" style="margin-bottom:10px">
-            <label class="form-label" data-i18n="settings_restart_cmd_header">Restart command</label>
+            <label class="form-label" data-i18n="sys_port">Port</label>
             <div style="display:flex;gap:8px;align-items:center">
-              <input id="restart-cmd-input" type="text" class="form-input" style="flex:1;font-family:monospace;font-size:13px" placeholder="vyrii --flask">
-              <button class="btn btn-ghost btn-sm" onclick="sysRestartCmd()" data-i18n="settings_restart_cmd_btn">Restart with this command</button>
+              <input id="cfg-port" type="number" class="form-input" style="width:120px" min="1024" max="65535" placeholder="5000">
+              <button class="btn btn-ghost btn-sm" onclick="sysPortRestart()" data-i18n="sys_port_btn">Save and restart</button>
             </div>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:4px" data-i18n="settings_restart_cmd_hint">Saved automatically. Default: vyrii --flask</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px" data-i18n="sys_port_hint">vyrii listens on: the -p of its start command, else this port, else 5000. Restart moves it here.</div>
           </div>
           <div class="form-row" style="align-items:center;gap:16px;flex-wrap:wrap">
             <button class="btn btn-ghost btn-sm" onclick="sysRestart()" data-i18n="sys_restart">Restart vyrii</button>
@@ -1135,6 +1161,7 @@
         </div>
       </div>
       <div class="inline-dialog" id="mkdir-dialog" style="display:none">
+        <span id="mkdir-parent" style="font-size:12px;color:var(--text-muted);white-space:nowrap"></span>
         <input type="text" id="mkdir-name" class="form-control"
           data-i18n-ph="mkdir_ph" placeholder="folder/name" style="max-width:300px">
         <button class="btn btn-primary btn-sm" onclick="doMkdir()" data-i18n="create">Create</button>
@@ -1148,6 +1175,24 @@
           <div class="placeholder-text" style="padding:40px 0;text-align:center" data-i18n="select_file">
             Select a file or folder
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PROCESS ── -->
+    <div class="tab-panel" id="tab-process">
+      <div class="panel-header">
+        <h1 class="ph-title" data-i18n="tab_process">Process</h1>
+        <div class="ph-actions">
+          <button class="btn btn-ghost btn-sm" onclick="procRefresh()" data-i18n="refresh">Refresh</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="placeholder-text" data-i18n="proc_desc">Tools started from Files → a folder → Run, each on a folder inside ~/.vyrii.</div>
+        <div id="proc-list" class="proc-list"></div>
+        <div id="proc-log-wrap" style="display:none">
+          <label class="form-label" id="proc-log-label">log</label>
+          <pre id="proc-log" class="file-raw" style="max-height:320px;overflow:auto"></pre>
         </div>
       </div>
     </div>
@@ -1999,6 +2044,25 @@ Examples:
 
 <!-- toast notification -->
 <div class="toast" id="toast"></div>
+
+<!-- network exposure warning (no password, reachable over Wi-Fi or an unknown network) -->
+<div id="exposure-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);
+     z-index:9998;align-items:center;justify-content:center;padding:16px">
+  <div style="background:var(--sidebar-bg,#1e293b);border:2px solid #ef4444;border-radius:12px;
+              padding:28px 30px;max-width:520px;width:100%;display:flex;flex-direction:column;gap:14px">
+    <div style="font-size:22px;font-weight:800;letter-spacing:1px;color:#ef4444;text-align:center;text-transform:uppercase"
+         data-i18n="expo_title">This computer is visible on the network</div>
+    <div style="font-size:14px" data-i18n="expo_at">vyrii can be opened without a password at:</div>
+    <div id="exposure-list" style="font-size:15px;display:flex;flex-direction:column;gap:4px"></div>
+    <div style="font-size:12px;color:var(--text-muted)" data-i18n="expo_trust_hint">"This is a private network" — the ticked addresses stop warning while this machine keeps them; a new address (e.g. plugged into a router) warns again.</div>
+    <div style="font-size:14px;font-weight:600" data-i18n="expo_do">Check it, turn on the password on the Settings page and change it.</div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+      <button class="btn btn-ghost" onclick="closeExposure(false)" data-i18n="expo_ok">I understand</button>
+      <button class="btn btn-ghost" onclick="trustExposure()" data-i18n="expo_trust">This is a private network</button>
+      <button class="btn btn-primary" onclick="closeExposure(true)" data-i18n="expo_settings">Open Settings</button>
+    </div>
+  </div>
+</div>
 
 <!-- login overlay (shown when --auth is active) -->
 <div id="login-overlay" style="display:none;position:fixed;inset:0;background:var(--bg,#0f172a);

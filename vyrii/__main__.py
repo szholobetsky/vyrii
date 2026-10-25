@@ -81,15 +81,20 @@ def main() -> None:
                         help="Default model to select on startup")
     args = parser.parse_args()
 
-    # resolve --flask port: explicit value > -p > 5000
+    cfg = _load_config()
+    saved_port = _saved_port(cfg)
+    # password: --auth or Settings → Authentication → Require password (config.json "auth")
+    args.auth = bool(args.auth or cfg.get("auth"))
+
+    # resolve --flask port: explicit value > -p > config.json "port" > 5000
     if args.flask is not None:
         if args.flask == 0:
-            args.flask = args.port or 5000
+            args.flask = args.port or saved_port or 5000
 
-    # default: Flask server if no mode flag given
+    # default: Flask server if no mode flag given; port: -p > config.json "port" > 5000
     if args.ui is None and args.api is None and args.flask is None:
         if args.port is None:
-            args.port = 5000
+            args.port = saved_port or 5000
 
     from .engine import BACKEND_OLLAMA, BACKEND_OPENAI
 
@@ -102,7 +107,6 @@ def main() -> None:
         api_url, api_backend = args.ollama, BACKEND_OLLAMA
 
     # resolve language: CLI arg > config.json > "en"
-    cfg = _load_config()
     lang = args.lang or cfg.get("lang", "en")
 
     # resolve model: CLI arg > config.json saved_model > None (auto from server)
@@ -120,6 +124,15 @@ def main() -> None:
         _run_flask(args, api_url, api_backend)
 
 
+def _saved_port(cfg: dict) -> int | None:
+    """config.json "port" (Settings → Port), when it is a valid port."""
+    try:
+        port = int(cfg.get("port") or 0)
+    except (TypeError, ValueError):
+        return None
+    return port if 1 <= port <= 65535 else None
+
+
 def _run_flask(args, api_url, api_backend) -> None:
     try:
         from .flask_api import create_app
@@ -127,6 +140,7 @@ def _run_flask(args, api_url, api_backend) -> None:
         print("Flask not found — run: pip install vyrii")
         raise SystemExit(1)
     app = create_app(base_url=api_url, backend=api_backend, auth=args.auth)
+    app.config["VYRII_BIND"] = args.bind   # the Process tab starts tools on the same interface
     port = args.port or 5000
     print(f"vyrii -> http://localhost:{port}  (UI: /ui/)")
     print(f"  backend : {api_url}  ({api_backend})")
@@ -237,6 +251,7 @@ def _run_ui_flask(args, api_url, api_backend, lang, startup_model) -> None:
 
     flask_port = args.flask
     flask_app = create_app(base_url=api_url, backend=api_backend, auth=args.auth)
+    flask_app.config["VYRII_BIND"] = args.bind
     print(f"vyrii Flask -> http://localhost:{flask_port}  (UI: /ui/)")
     print(f"vyrii Gradio -> http://localhost:{args.ui}")
     print(f"  backend : {api_url}  ({api_backend})")

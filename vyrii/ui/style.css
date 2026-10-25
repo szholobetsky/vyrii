@@ -403,6 +403,7 @@ a:hover { text-decoration: underline; }
 .msg-wrap {
   position: relative;
   max-width: 72%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -423,7 +424,15 @@ a:hover { text-decoration: underline; }
   line-height: 1.6;
   word-break: break-word;
   white-space: pre-wrap;
+  /* never wider than its column: a wide code block or table used to push a right-aligned
+     (user / "Add to chat") bubble out to the left, under the sidebar */
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
 }
+.bubble table { display: block; max-width: 100%; overflow-x: auto; }
+.bubble :is(td, th) { min-width: 8ch; }   /* "score" stays one word, long ones still wrap */
 .msg-row.asst .bubble {
   background: var(--a-bubble);
   color: var(--a-text);
@@ -1170,6 +1179,11 @@ select.form-control { cursor: pointer; }
   font-size: 12px;
 }
 .ctx-block[open] > summary { margin-bottom: 8px; }
+.bubble.bubble-block:has(.ctx-block[open]) { width: 100%; }   /* opened: the full column */
+/* a collapsed block is one short line: the buttons floating over the bubble covered its ▸,
+   so for blocks they sit in a row under it */
+.bubble.bubble-block { min-width: 220px; }
+.msg-wrap:has(.bubble-block) .msg-copy-group { position: static; justify-content: flex-end; }
 .ctx-block-body { max-height: 420px; overflow: auto; }
 .msg-copy.msg-delete:hover { color: #e06c75; border-color: #e06c75; }
 
@@ -1197,3 +1211,29 @@ select.form-control { cursor: pointer; }
 .on-triples { margin-top: 8px; max-height: 420px; overflow-y: auto; font-size: 13px; }
 .on-triple { padding: 2px 0; border-bottom: 1px solid var(--border); }
 .on-pred { color: var(--accent); font-family: monospace; margin: 0 4px; }
+
+/* ── Process tab ───────────────────────────────────── */
+.proc-list { display: flex; flex-direction: column; gap: 8px; }
+.proc-row {
+  display: grid; grid-template-columns: 110px 1fr 70px 90px auto; gap: 10px; align-items: center;
+  padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card, transparent);
+  font-size: 13px;
+}
+.proc-row .proc-folder { word-break: break-all; color: var(--text-muted); }
+.proc-row .proc-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.proc-status { font-size: 12px; }
+.proc-status.running  { color: #2e9d57; }
+.proc-status.starting { color: #c08a17; }
+.proc-status.exited, .proc-status.no-port { color: #c0453a; }
+.run-menu { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.run-menu .btn { justify-content: flex-start; text-align: left; }
+@media (max-width: 640px) {
+  .proc-row { grid-template-columns: 1fr 1fr; }
+  .proc-row .proc-actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
+
+/* live progress lines of a tool run (streamJson), above the growing answer */
+.live-log {
+  font-family: monospace; font-size: 11.5px; color: var(--text-muted);
+  white-space: pre-wrap; border-left: 2px solid var(--border); padding-left: 8px; margin-bottom: 8px;
+}

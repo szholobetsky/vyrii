@@ -281,8 +281,11 @@ def _save_config(updates: dict):
 # ── external tools ─────────────────────────────────────────────────────────────
 
 _DEFAULT_TOOLS = [
-    {"name": "SIMARGL", "port": 7861},
-    {"name": "SVITOVYD", "port": 7860},
+    {"name": "SIMARGL", "port": 8099},
+    {"name": "SVITOVYD", "port": 8097},
+    {"name": "GAMAYUN", "port": 8095},
+    {"name": "MOKOSH", "port": 8093},
+    {"name": "ALKONOST", "port": 8090},
 ]
 
 
